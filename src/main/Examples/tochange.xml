@@ -1,0 +1,7 @@
+<bpmn2:dataObjectReference id="DataObjectReference_1jn49fl" name="Vacuum Gripper" dataObjectRef="DataObject_0ggwx3s" iot:type="obj">
+    <bpmn2:extensionElements>
+        <iot:properties>
+            <iot:property url="http://127.0.0.1:5000/vgr/move_to?factory=1&#38;machine=vgr_1&#38;position=high_bay_warehouse" />
+        </iot:properties>
+    </bpmn2:extensionElements>
+</bpmn2:dataObjectReference>
