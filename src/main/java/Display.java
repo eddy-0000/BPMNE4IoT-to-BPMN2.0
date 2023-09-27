@@ -1,10 +1,13 @@
 import javafx.application.Application;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 import javafx.stage.FileChooser;
@@ -25,6 +28,9 @@ public class Display extends Application {
         Label informationLabel = new Label();
         // create two buttons
         Button importButton = new Button("Import XML");
+
+
+
         importButton.setOnAction(event -> {
             // create a file chooser dialog
             FileChooser fileChooser = new FileChooser();
@@ -36,13 +42,18 @@ public class Display extends Application {
             // if the user selected a file, print its path to the console
             if (selectedFile != null) {
                 if (!selectedFile.getName().endsWith(".bpmn")) {
+                    informationLabel.setTextFill(Color.RED);
                     informationLabel.setText("Invalid file. Only .bpmn files are accepted.");
                 } else {
                     try {
-                        //extractor.convertIoTElements(selectedFile);
+                        informationLabel.setTextFill(Color.BLACK);
+                        informationLabel.setText("Converting model...");
                         xmlToJava.convertXML(selectedFile);
-                        informationLabel.setText("The file has been converted to standard BPMN 2.0.");
+                        informationLabel.setTextFill(Color.GREEN);
+                        informationLabel.setText("The model has been converted to standard BPMN 2.0.");
                     } catch (Exception e) {
+                        informationLabel.setTextFill(Color.RED);
+                        informationLabel.setText(e.getMessage());
                         e.printStackTrace();
                     }
                 }
@@ -52,17 +63,17 @@ public class Display extends Application {
         Button exportButton = new Button("Export XML");
 
         // create a layout container to hold the buttons
-        BorderPane root = new BorderPane();
+        VBox root = new VBox(20);
         HBox hbox = new HBox();
         hbox.setPadding(new Insets(15,12,15,12));
         hbox.setSpacing(20);
         hbox.setStyle("-fx-background-color: #336699;");
-        Paint paint = Color.RED;
-        informationLabel.setTextFill(paint);
-        informationLabel.setStyle("-fx-background-color: #616161;");
-        hbox.getChildren().addAll(importButton,exportButton, informationLabel);
+        hbox.getChildren().addAll(importButton,exportButton);
 
-        root.setTop(hbox);
+        HBox infoHbox = new HBox(20);
+        infoHbox.getChildren().addAll(informationLabel);
+
+        root.getChildren().addAll(hbox,infoHbox);
 
         // create a scene with the layout container as its root
         Scene scene = new Scene(root, 300, 200);
