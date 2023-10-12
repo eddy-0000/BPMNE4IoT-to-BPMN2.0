@@ -7,8 +7,6 @@ Note: Currently the IoT Boundary Event is not supported in the BPMNE4IoT modelle
 
 ## TODO
 
-Formatting errors must be fixed.
-
 ## License
 
 MIT

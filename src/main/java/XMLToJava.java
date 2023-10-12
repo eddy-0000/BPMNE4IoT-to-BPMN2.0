@@ -26,10 +26,12 @@ public class XMLToJava {
     private boolean maxSet = false;
     private int maxY;
     private int minY;
+    private List<Integer> movedYUp = new ArrayList<>();
+    private List<Integer> movedYDown = new ArrayList<>();
     private List<String> whiteBoxes = new ArrayList<>();
     private List<TTask> toDelete = new ArrayList<>();
     private List<TTask> toRemove = new ArrayList<>();
-    private boolean skip = false;
+    private String processID = "";
 
     public void convertXML(File xmlFile) throws Exception {
         toRemove.clear();
@@ -55,6 +57,8 @@ public class XMLToJava {
                 process = (TProcess) root.getRootElement().get(0).getValue();
                 root.getRootElement().add(objectFactory.createCollaboration(collaboration));
             }
+
+            processID = process.getId();
 
 
             BPMNPlane plane = root.getBPMNDiagram().get(0).getBPMNPlane();
@@ -112,24 +116,25 @@ public class XMLToJava {
                 }
             }
 
-            for (int i = 0; i < process.getFlowElement().size(); i++) {
-                if (process.getFlowElement().get(i).getValue() instanceof TBoundaryEvent) {
-                    separateBoundary((TBoundaryEvent) process.getFlowElement().get(i).getValue(), process, plane);
-                }
-            }
-
-            String error = checkIfModelIsValid(process,collaboration,plane);
+            String error = checkIfModelIsValid(process.getFlowElement());
 
             if (!error.equals("")){
                 throw new Exception(error);
             }
 
-            conversion(process,collaboration,plane);
+            for (int i = 0; i < process.getFlowElement().size(); i++) {
+                if (process.getFlowElement().get(i).getValue() instanceof TBoundaryEvent) {
+                    separateBoundary((TBoundaryEvent) process.getFlowElement().get(i).getValue(), process.getFlowElement(), plane);
+                    System.out.println("Boundary End");
+                }
+            }
+
+            conversion(process.getFlowElement(),collaboration,plane);
             //do a second check in case some elements have been skipped in the first iteration
-            conversion(process,collaboration,plane);
+            conversion(process.getFlowElement(),collaboration,plane);
 
 
-            formatDiagram(process,collaboration,plane);
+            formatDiagram(process.getFlowElement(),collaboration,plane);
             // Marshal the JAXBElement to an XML file
             String exportedFile = xmlFile.getAbsolutePath().substring(0, xmlFile.getAbsolutePath().length() - 5);
             exportedFile += "_copy.bpmn";
@@ -139,62 +144,63 @@ public class XMLToJava {
         }
     }
 
-    private String checkIfModelIsValid(TProcess process, TCollaboration collaboration, BPMNPlane plane) throws Exception {
+    private String checkIfModelIsValid(List<JAXBElement<? extends TFlowElement>> flowElements) throws Exception {
         String errorMsg = "";
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
-            if (process.getFlowElement().get(i).getValue().getClass() == TSubProcess.class) {
+        for (int i = 0; i < flowElements.size(); i++) {
+            if (flowElements.get(i).getValue() instanceof TSubProcess subProcess) {
+                //checkIfModelIsValid(subProcess.getFlowElement());
                 throw new Exception("Sub-Processes are currently not supported!");
             }
-            if (process.getFlowElement().get(i).getValue().getClass() == TStartEvent.class) {
-                for (QName key : process.getFlowElement().get(i).getValue().getOtherAttributes().keySet()) {
-                    TStartEvent startEvent = (TStartEvent) process.getFlowElement().get(i).getValue();
+            if (flowElements.get(i).getValue().getClass() == TStartEvent.class) {
+                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
+                    TStartEvent startEvent = (TStartEvent) flowElements.get(i).getValue();
                     //checks if it's of iot:type="start"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("start")) {
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("start")) {
                        //Do nothing
                     }
                 }
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TActivity.class) {
+            } else if (flowElements.get(i).getValue().getClass() == TActivity.class) {
                 //TODO: Do Nothing?
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TBoundaryEvent.class) {
+            } else if (flowElements.get(i).getValue().getClass() == TBoundaryEvent.class) {
                 //TODO: Do Nothing?
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TEndEvent.class) {
-                for (QName key : process.getFlowElement().get(i).getValue().getOtherAttributes().keySet()) {
-                    TEndEvent iotEnd = (TEndEvent) process.getFlowElement().get(i).getValue();
+            } else if (flowElements.get(i).getValue().getClass() == TEndEvent.class) {
+                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
+                    TEndEvent iotEnd = (TEndEvent) flowElements.get(i).getValue();
                     //checks if it's of iot:type="start"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("end")) {
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("end")) {
                         //Do nothing
                     }
                 }
-            } else if (process.getFlowElement().get(i).getValue() instanceof TCatchEvent) {
-                for (QName key : process.getFlowElement().get(i).getValue().getOtherAttributes().keySet()) {
+            } else if (flowElements.get(i).getValue() instanceof TCatchEvent) {
+                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
                     //checks if it's of iot:type="catch"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("catch")) {
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("catch")) {
                         //do nothing
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("throw")) {
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("throw")) {
                         //do nothing
                     }
                 }
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TDataObjectReference.class) {
-                for (int keyItem = 0; keyItem < process.getFlowElement().get(i).getValue().getOtherAttributes().keySet().toArray().length; keyItem++) {
-                    QName key = (QName) process.getFlowElement().get(i).getValue().getOtherAttributes().keySet().toArray()[keyItem];
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("obj")) {
-                        process.getFlowElement().get(i).getValue().getOtherAttributes().remove(key);
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch") || process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch-sub"))) {
-                        TDataObjectReference reference = (TDataObjectReference) process.getFlowElement().get(i).getValue();
-                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, process);
+            } else if (flowElements.get(i).getValue().getClass() == TDataObjectReference.class) {
+                for (int keyItem = 0; keyItem < flowElements.get(i).getValue().getOtherAttributes().keySet().toArray().length; keyItem++) {
+                    QName key = (QName) flowElements.get(i).getValue().getOtherAttributes().keySet().toArray()[keyItem];
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("obj")) {
+                        flowElements.get(i).getValue().getOtherAttributes().remove(key);
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (flowElements.get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch") || flowElements.get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch-sub"))) {
+                        TDataObjectReference reference = (TDataObjectReference) flowElements.get(i).getValue();
+                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, flowElements);
                         if (tasks.size() == 1) {
-                            errorMsg = checkValidityOfIoTDependantTask(tasks,reference,true,process);
+                            errorMsg = checkValidityOfIoTDependantTask(tasks,reference,true,flowElements);
                         } else {
-                            errorMsg = checkValidityOfIoTDependantTask(tasks, reference, true, process);
+                            errorMsg = checkValidityOfIoTDependantTask(tasks, reference, true, flowElements);
                         }
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("sensor") || process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("sensor-sub"))) {
-                        TDataObjectReference reference = (TDataObjectReference) process.getFlowElement().get(i).getValue();
-                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, process);
-                        errorMsg = checkValidityOfIoTDependantTask(tasks, reference, true, process);
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("actor") || process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("actor-sub"))) {
-                        TDataObjectReference reference = (TDataObjectReference) process.getFlowElement().get(i).getValue();
-                        List<TTask> tasks = getAssociatedTasks(reference.getId(), true, process);
-                        errorMsg = checkValidityOfIoTDependantTask(tasks, reference, false, process);
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (flowElements.get(i).getValue().getOtherAttributes().get(key).equals("sensor") || flowElements.get(i).getValue().getOtherAttributes().get(key).equals("sensor-sub"))) {
+                        TDataObjectReference reference = (TDataObjectReference) flowElements.get(i).getValue();
+                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, flowElements);
+                        errorMsg = checkValidityOfIoTDependantTask(tasks, reference, true, flowElements);
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (flowElements.get(i).getValue().getOtherAttributes().get(key).equals("actor") || flowElements.get(i).getValue().getOtherAttributes().get(key).equals("actor-sub"))) {
+                        TDataObjectReference reference = (TDataObjectReference) flowElements.get(i).getValue();
+                        List<TTask> tasks = getAssociatedTasks(reference.getId(), true, flowElements);
+                        errorMsg = checkValidityOfIoTDependantTask(tasks, reference, false, flowElements);
                     }
                 }
             }
@@ -202,22 +208,21 @@ public class XMLToJava {
         return errorMsg;
     }
 
-    private String checkValidityOfIoTDependantTask(List<TTask> tasks, TDataObjectReference reference, boolean isSensor, TProcess process) throws Exception {
+    private String checkValidityOfIoTDependantTask(List<TTask> tasks, TDataObjectReference reference, boolean isSensor, List<JAXBElement<? extends TFlowElement>> flowElements) throws Exception {
         Iterator<TTask> iterator = tasks.iterator();
         if (isSensor) {
-            if (getAssociatedTasks(reference.getId(), false, process).size() > 2){
+            if (getAssociatedTasks(reference.getId(), false, flowElements).size() > 2){
                 throw new Exception("A sensor has more than 2 associations, which is currently not supported by the prototype!");
             }
         } else {
-            if (getAssociatedTasks(reference.getId(), true, process).size() > 2){
+            if (getAssociatedTasks(reference.getId(), true, flowElements).size() > 2){
                 throw new Exception("An actuator has more than 2 associations, which is currently not supported by the prototype!");
             }
         }
         while (iterator.hasNext()) {
             //get the current task
             TTask task = iterator.next();
-            System.out.println("Valid: "+ task.getId() + " --- " + task.getDataInputAssociation().size() + " ---- " + task.getDataOutputAssociation().size());
-            if (task.getDataInputAssociation().size() > 2) {
+             if (task.getDataInputAssociation().size() > 2) {
                 throw new Exception("Some tasks have too many sensor associations and are not supported by this prototype currently!");
             } else if (task.getDataOutputAssociation().size() > 1) {
                 System.out.println("here");
@@ -246,21 +251,21 @@ public class XMLToJava {
         return "";
     }
 
-    private void conversion(TProcess process, TCollaboration collaboration, BPMNPlane plane){
+    private void conversion(List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane){
         boolean reduceCounter = false;
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
+        for (int i = 0; i < flowElements.size(); i++) {
             if (reduceCounter) {
                 i--;
                 reduceCounter = false;
             }
-            if (process.getFlowElement().get(i).getValue().getClass() == TStartEvent.class) {
-                for (QName key : process.getFlowElement().get(i).getValue().getOtherAttributes().keySet()) {
-                    TStartEvent startEvent = (TStartEvent) process.getFlowElement().get(i).getValue();
+            if (flowElements.get(i).getValue().getClass() == TStartEvent.class) {
+                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
+                    TStartEvent startEvent = (TStartEvent) flowElements.get(i).getValue();
                     //checks if it's of iot:type="start"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("start")) {
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("start")) {
                         TStartEvent condEvent = new TStartEvent();
-                        condEvent.setId(process.getFlowElement().get(i).getValue().getId());
-                        condEvent.setName(process.getFlowElement().get(i).getValue().getName());
+                        condEvent.setId(flowElements.get(i).getValue().getId());
+                        condEvent.setName(flowElements.get(i).getValue().getName());
                         for (int j = 0; j < startEvent.getOutgoing().size(); j++) {
                             condEvent.getOutgoing().add(startEvent.getOutgoing().get(j));
                         }
@@ -271,20 +276,18 @@ public class XMLToJava {
                         JAXBElement<TConditionalEventDefinition> eventDefinition = objectFactory.createConditionalEventDefinition(conditionalEventDefinition);
                         condEvent.getEventDefinition().add(eventDefinition);
                         JAXBElement<TStartEvent> startElement = objectFactory.createStartEvent(condEvent);
-                        process.getFlowElement().remove(i);
-                        process.getFlowElement().add(startElement);
+                        flowElements.remove(i);
+                        flowElements.add(startElement);
                         reduceCounter = true;
                     }
                 }
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TActivity.class) {
-                //TODO: Do Nothing?
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TBoundaryEvent.class) {
-                //TODO: Do Nothing?
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TEndEvent.class) {
-                for (QName key : process.getFlowElement().get(i).getValue().getOtherAttributes().keySet()) {
-                    TEndEvent iotEnd = (TEndEvent) process.getFlowElement().get(i).getValue();
+            } else if (flowElements.get(i).getValue() instanceof TSubProcess subProcess) {
+                conversion(subProcess.getFlowElement(),collaboration,plane);
+            } else if (flowElements.get(i).getValue().getClass() == TEndEvent.class) {
+                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
+                    TEndEvent iotEnd = (TEndEvent) flowElements.get(i).getValue();
                     //checks if it's of iot:type="start"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("end")) {
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("end")) {
                         //create all needed objects
                         TSequenceFlow sequenceFlow = new TSequenceFlow();
                         TServiceTask serviceTask = new TServiceTask();
@@ -297,7 +300,7 @@ public class XMLToJava {
 
                         //set the attributes for the service task
                         serviceTask.setId(taskID);
-                        serviceTask.setName(process.getFlowElement().get(i).getValue().getName());
+                        serviceTask.setName(flowElements.get(i).getValue().getName());
                         serviceTask.getIncoming().add(iotEnd.getIncoming().get(0));
                         serviceTask.getOutgoing().add(QName.valueOf(flowID));
                         if (iotEnd.getProperty().size() > 0) {
@@ -306,7 +309,7 @@ public class XMLToJava {
                             serviceTask.getProperty().clear();
                         }
                         //replace the id of the prior object with the new one
-                        replaceAllIDsMentions(process.getFlowElement().get(i).getValue().getId(), serviceTask, taskID, process, plane);
+                        replaceAllIDsMentions(flowElements.get(i).getValue().getId(), serviceTask, taskID, flowElements, plane);
 
                         //set the attributes for the end event
                         normalEnd.setId(endID);
@@ -323,10 +326,10 @@ public class XMLToJava {
                         JAXBElement<TEndEvent> endElement = objectFactory.createEndEvent(normalEnd);
 
                         //add all elements to the list
-                        process.getFlowElement().remove(i);
-                        process.getFlowElement().add(taskElement);
-                        process.getFlowElement().add(flowElement);
-                        process.getFlowElement().add(endElement);
+                        flowElements.remove(i);
+                        flowElements.add(taskElement);
+                        flowElements.add(flowElement);
+                        flowElements.add(endElement);
 
                         //reposition and resize the service task
                         double[] serviceCord = getShapeOrEdgeAttributes(taskID, plane);
@@ -354,11 +357,11 @@ public class XMLToJava {
                         i--;
                     }
                 }
-            } else if (process.getFlowElement().get(i).getValue() instanceof TCatchEvent) {
-                for (QName key : process.getFlowElement().get(i).getValue().getOtherAttributes().keySet()) {
+            } else if (flowElements.get(i).getValue() instanceof TCatchEvent) {
+                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
                     //checks if it's of iot:type="catch"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("catch")) {
-                        TIntermediateCatchEvent iotThrow = (TIntermediateCatchEvent) process.getFlowElement().get(i).getValue();
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("catch")) {
+                        TIntermediateCatchEvent iotThrow = (TIntermediateCatchEvent) flowElements.get(i).getValue();
                         //create the service task
                         TBusinessRuleTask businessRuleTask = new TBusinessRuleTask();
                         //generate IDs
@@ -368,18 +371,18 @@ public class XMLToJava {
                         businessRuleTask.getOutgoing().addAll(iotThrow.getOutgoing());
                         businessRuleTask.getIncoming().addAll(iotThrow.getIncoming());
                         JAXBElement<TBusinessRuleTask> taskElement = objectFactory.createBusinessRuleTask(businessRuleTask);
-                        process.getFlowElement().remove(i);
-                        process.getFlowElement().add(taskElement);
+                        flowElements.remove(i);
+                        flowElements.add(taskElement);
                         //replace all ids
-                        replaceAllIDsMentions(iotThrow.getId(), businessRuleTask, taskID, process, plane);
+                        replaceAllIDsMentions(iotThrow.getId(), businessRuleTask, taskID, flowElements, plane);
                         //reposition all items
                         BPMNShape shape = (BPMNShape) getShapeOrEdge(taskID, plane);
                         double y = shape.getBounds().getY() + shape.getBounds().getHeight()/2 - 40;
                         changeShapeAttributes(taskID, 100, 80, (int) shape.getBounds().getX(), y, false, plane);
                         moveEverythingToRight(shape.getBounds().getX(),44,plane);
                         i--;
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("throw")) {
-                        TIntermediateCatchEvent iotThrow = (TIntermediateCatchEvent) process.getFlowElement().get(i).getValue();
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("throw")) {
+                        TIntermediateCatchEvent iotThrow = (TIntermediateCatchEvent) flowElements.get(i).getValue();
                         //create the service task
                         String taskID = "Activity_"+randomNumberSequence();
                         TServiceTask serviceTask = new TServiceTask();
@@ -388,10 +391,10 @@ public class XMLToJava {
                         serviceTask.getOutgoing().addAll(iotThrow.getOutgoing());
                         serviceTask.getIncoming().addAll(iotThrow.getIncoming());
                         JAXBElement<TServiceTask> taskElement = objectFactory.createServiceTask(serviceTask);
-                        process.getFlowElement().remove(i);
-                        process.getFlowElement().add(taskElement);
+                        flowElements.remove(i);
+                        flowElements.add(taskElement);
                         //replace all ids
-                        replaceAllIDsMentions(iotThrow.getId(), serviceTask, taskID, process, plane);
+                        replaceAllIDsMentions(iotThrow.getId(), serviceTask, taskID, flowElements, plane);
                         BPMNShape shape = (BPMNShape) getShapeOrEdge(taskID, plane);
                         double y = shape.getBounds().getY() + shape.getBounds().getHeight()/2 - 40;
                         changeShapeAttributes(taskID, 100, 80, (int) shape.getBounds().getX(), y, false, plane);
@@ -399,38 +402,38 @@ public class XMLToJava {
                         i--;
                     }
                 }
-            } else if (process.getFlowElement().get(i).getValue().getClass() == TDataObjectReference.class) {
-                for (int keyItem = 0; keyItem < process.getFlowElement().get(i).getValue().getOtherAttributes().keySet().toArray().length; keyItem++) {
-                    QName key = (QName) process.getFlowElement().get(i).getValue().getOtherAttributes().keySet().toArray()[keyItem];
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("obj")) {
-                        process.getFlowElement().get(i).getValue().getOtherAttributes().remove(key);
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch") || process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch-sub"))) {
-                        TDataObjectReference reference = (TDataObjectReference) process.getFlowElement().get(i).getValue();
-                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, process);
+            } else if (flowElements.get(i).getValue().getClass() == TDataObjectReference.class) {
+                for (int keyItem = 0; keyItem < flowElements.get(i).getValue().getOtherAttributes().keySet().toArray().length; keyItem++) {
+                    QName key = (QName) flowElements.get(i).getValue().getOtherAttributes().keySet().toArray()[keyItem];
+                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("obj")) {
+                        flowElements.get(i).getValue().getOtherAttributes().remove(key);
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (flowElements.get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch") || flowElements.get(i).getValue().getOtherAttributes().get(key).equals("artefact-catch-sub"))) {
+                        TDataObjectReference reference = (TDataObjectReference)flowElements.get(i).getValue();
+                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, flowElements);
                         if (tasks.size() == 1) {
-                            changeIoTDependantTask(tasks,reference,true, false,process,collaboration,plane);
+                            changeIoTDependantTask(tasks,reference,true, false,flowElements,collaboration,plane);
                             //replaceArtefactTask(reference,process,plane);
-                            //process.getFlowElement().remove(i);
+                            //flowElements.remove(i);
                             i--;
                         } else {
-                            keyItem -= changeIoTDependantTask(tasks, reference, true, false, process, collaboration, plane);
+                            keyItem -= changeIoTDependantTask(tasks, reference, true, false, flowElements, collaboration, plane);
                            // replaceSeveralOutputAssociation(tasks.get(0), reference, process, collaboration, plane);
                         }
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("sensor") || process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("sensor-sub"))) {
-                        TDataObjectReference reference = (TDataObjectReference) process.getFlowElement().get(i).getValue();
-                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, process);
-                        keyItem -= changeIoTDependantTask(tasks, reference, true, false, process, collaboration, plane);
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("actor") || process.getFlowElement().get(i).getValue().getOtherAttributes().get(key).equals("actor-sub"))) {
-                        TDataObjectReference reference = (TDataObjectReference) process.getFlowElement().get(i).getValue();
-                        List<TTask> tasks = getAssociatedTasks(reference.getId(), true, process);
-                        keyItem -= changeIoTDependantTask(tasks, reference, false, false, process, collaboration, plane);
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (flowElements.get(i).getValue().getOtherAttributes().get(key).equals("sensor") || flowElements.get(i).getValue().getOtherAttributes().get(key).equals("sensor-sub"))) {
+                        TDataObjectReference reference = (TDataObjectReference) flowElements.get(i).getValue();
+                        List<TTask> tasks = getAssociatedTasks(reference.getId(), false, flowElements);
+                        keyItem -= changeIoTDependantTask(tasks, reference, true, false, flowElements, collaboration, plane);
+                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && (flowElements.get(i).getValue().getOtherAttributes().get(key).equals("actor") || flowElements.get(i).getValue().getOtherAttributes().get(key).equals("actor-sub"))) {
+                        TDataObjectReference reference = (TDataObjectReference) flowElements.get(i).getValue();
+                        List<TTask> tasks = getAssociatedTasks(reference.getId(), true, flowElements);
+                        keyItem -= changeIoTDependantTask(tasks, reference, false, false, flowElements, collaboration, plane);
                     }
                 }
             }
         }
     }
 
-    private void replaceArtefactTask (TDataObjectReference reference, TTask task, TProcess process, BPMNPlane plane){
+    private void replaceArtefactTask (TDataObjectReference reference, TTask task, List<JAXBElement<? extends TFlowElement>> flowElements, BPMNPlane plane){
         TBusinessRuleTask businessRuleTask = new TBusinessRuleTask();
         TSequenceFlow taskOut = new TSequenceFlow();
         TSequenceFlow xorOutgoingElse = new TSequenceFlow();
@@ -455,8 +458,8 @@ public class XMLToJava {
         exclusiveGatewayLeft.setId(gateWay1Id);
         exclusiveGatewayRight.setId(gateWay2Id);
 
-        TSequenceFlow originalOutgoingFlow = (TSequenceFlow) getBaseElement(task.getOutgoing().get(0).getLocalPart(),process);
-        TSequenceFlow originalIncomingFlow = (TSequenceFlow) getBaseElement(task.getIncoming().get(0).getLocalPart(),process);
+        TSequenceFlow originalOutgoingFlow = (TSequenceFlow) getBaseElement(task.getOutgoing().get(0).getLocalPart(),flowElements);
+        TSequenceFlow originalIncomingFlow = (TSequenceFlow) getBaseElement(task.getIncoming().get(0).getLocalPart(),flowElements);
 
         exclusiveGatewayRight.getIncoming().add(QName.valueOf(taskOut.getId()));
         exclusiveGatewayRight.getOutgoing().add(QName.valueOf(originalOutgoingFlow.getId()));
@@ -493,11 +496,11 @@ public class XMLToJava {
         JAXBElement<TSequenceFlow> flow3Element = objectFactory.createSequenceFlow(taskIn);
 
 
-        process.getFlowElement().add(gate1Element);
-        process.getFlowElement().add(gate2Element);
-        process.getFlowElement().add(flow1Element);
-        process.getFlowElement().add(flow2Element);
-        process.getFlowElement().add(flow3Element);
+        flowElements.add(gate1Element);
+        flowElements.add(gate2Element);
+        flowElements.add(flow1Element);
+        flowElements.add(flow2Element);
+        flowElements.add(flow3Element);
 
 
         BPMNShape taskShape = (BPMNShape) getShapeOrEdge(task.getId(),plane);
@@ -561,12 +564,14 @@ public class XMLToJava {
         plane.getDiagramElement().add(planeObjectFactory.createBPMNEdge(taskOutEdge));
         plane.getDiagramElement().add(planeObjectFactory.createBPMNEdge(taskInEdge));
 
-        removeFromProcess(task, process);
-        process.getFlowElement().add(taskElement);
+        removeFromProcess(task, flowElements);
+        flowElements.add(taskElement);
     }
 
-    private void separateBoundary(TBoundaryEvent boundary, TProcess process, BPMNPlane plane){
-        TTask baseTask = (TTask) getBaseElement(String.valueOf(boundary.getAttachedToRef()),process);
+    private void separateBoundary(TBoundaryEvent boundary, List<JAXBElement<? extends TFlowElement>> flowElements, BPMNPlane plane){
+        System.out.println("Bopundary " + boundary.getAttachedToRef().getLocalPart());
+        TTask baseTask = (TTask) getBaseElement(boundary.getAttachedToRef().getLocalPart(),flowElements);
+        baseTask.getProperty().clear();
         BPMNShape baseShape = (BPMNShape) getShapeOrEdge(baseTask.getId(), plane);
 
         moveEverythingToRight(baseShape.getBounds().getX(), 200,plane);
@@ -595,6 +600,8 @@ public class XMLToJava {
         String taskOutgoingFlow = "Flow_"+randomNumberSequence();
         String boundaryID = "Flow_"+randomNumberSequence();
 
+        System.out.println(leftParallelGate + " --- " + rightParallelGate + " --- " + xorGateWayId);
+
         //set attributes
         leftParallel1Flow.setId(taskIncomingFlow);
         leftParallel2Flow.setId(leftParallel2TaskFlow);
@@ -605,14 +612,16 @@ public class XMLToJava {
         leftGateParallel.setId(leftParallelGate);
         rightGateParallel.setId(rightParallelGate);
         xorGateWay.setId(xorGateWayId);
-        boundaryInter.setId(boundaryID);
+        boundaryInter.setId(boundary.getId());
         boundaryInter.setName("Retrieve data");
         boundaryInter.getEventDefinition().addAll(boundary.getEventDefinition());
 
-        TSequenceFlow originalOutgoingFlow = (TSequenceFlow) getBaseElement(baseTask.getOutgoing().get(0).getLocalPart(),process);
-        TSequenceFlow originalIncomingFlow = (TSequenceFlow) getBaseElement(baseTask.getIncoming().get(0).getLocalPart(),process);
-        TSequenceFlow xorGateWayRightOut = (TSequenceFlow) getBaseElement(boundary.getOutgoing().get(0).getLocalPart(),process);
-        xorGateWayRightOut.setName(boundary.getName());
+        System.out.println(xorGateWay.getId() + " hahahahah ");
+
+        TSequenceFlow originalOutgoingFlow = (TSequenceFlow) getBaseElement(baseTask.getOutgoing().get(0).getLocalPart(),flowElements);
+        TSequenceFlow originalIncomingFlow = (TSequenceFlow) getBaseElement(baseTask.getIncoming().get(0).getLocalPart(),flowElements);
+        TSequenceFlow xorGateWayRightOut = (TSequenceFlow) getBaseElement(boundary.getOutgoing().get(0).getLocalPart(),flowElements);
+        //xorGateWayRightOut.setName(boundary.getName());
 
         leftGateParallel.getIncoming().add(QName.valueOf(originalIncomingFlow.getId()));
         leftGateParallel.getOutgoing().add(QName.valueOf(leftParallel1Flow.getId()));
@@ -651,27 +660,31 @@ public class XMLToJava {
 
         xorGateWayRightOut.setSourceRef(xorGateWay.getId());
 
+        originalIncomingFlow.setTargetRef(leftGateParallel.getId());
+        originalOutgoingFlow.setSourceRef(rightGateParallel.getId());
+
 
         JAXBElement<TExclusiveGateway> exclusiveGateway = objectFactory.createExclusiveGateway(xorGateWay);
         JAXBElement<TParallelGateway> parallelGateway1 = objectFactory.createParallelGateway(leftGateParallel);
         JAXBElement<TParallelGateway> parallelGateway2 = objectFactory.createParallelGateway(rightGateParallel);
+        JAXBElement<TIntermediateCatchEvent> intermediateCatchEvent = objectFactory.createIntermediateCatchEvent(boundaryInter);
         JAXBElement<TSequenceFlow> flow1Element = objectFactory.createSequenceFlow(leftParallel1Flow);
         JAXBElement<TSequenceFlow> flow2Element = objectFactory.createSequenceFlow(leftParallel2Flow);
         JAXBElement<TSequenceFlow> flow3Element = objectFactory.createSequenceFlow(xorGateWayOutFlow);
         JAXBElement<TSequenceFlow> flow4Element = objectFactory.createSequenceFlow(xorGateWayInFlow);
         JAXBElement<TSequenceFlow> flow5Element = objectFactory.createSequenceFlow(rightParallelTaskIncoming);
-        JAXBElement<TIntermediateCatchEvent> intermediateCatchEvent = objectFactory.createIntermediateCatchEvent(boundaryInter);
 
-        removeFromProcess(boundary,process);
-        process.getFlowElement().add(exclusiveGateway);
-        process.getFlowElement().add(parallelGateway1);
-        process.getFlowElement().add(parallelGateway2);
-        process.getFlowElement().add(flow1Element);
-        process.getFlowElement().add(flow2Element);
-        process.getFlowElement().add(flow3Element);
-        process.getFlowElement().add(flow4Element);
-        process.getFlowElement().add(flow5Element);
-        process.getFlowElement().add(intermediateCatchEvent);
+        removeFromProcess(boundary,flowElements);
+        flowElements.add(exclusiveGateway);
+        flowElements.add(parallelGateway1);
+        flowElements.add(parallelGateway2);
+        flowElements.add(intermediateCatchEvent);
+        flowElements.add(flow1Element);
+        flowElements.add(flow2Element);
+        flowElements.add(flow3Element);
+        flowElements.add(flow4Element);
+        flowElements.add(flow5Element);
+
 
         BPMNEdge flow1 = (BPMNEdge) getShapeOrEdge(originalIncomingFlow.getId(),plane);
         BPMNEdge flow2 = (BPMNEdge) getShapeOrEdge(originalOutgoingFlow.getId(),plane);
@@ -741,20 +754,20 @@ public class XMLToJava {
         plane.getDiagramElement().add(objectFactoryEdge.createBPMNEdge(taskOut));
     }
 
-    private void formatDiagram(TProcess process, TCollaboration collaboration, BPMNPlane plane){
+    private void formatDiagram(List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane){
         for (TTask delete:toDelete) {
-            removeFromProcess(delete,process);
+            removeFromProcess(delete,flowElements);
         }
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
-            if (process.getFlowElement().get(i).getValue() instanceof TIntermediateCatchEvent) {
+        for (int i = 0; i < flowElements.size(); i++) {
+            if (flowElements.get(i).getValue() instanceof TIntermediateCatchEvent) {
                 TIntermediateCatchEvent intermediateCatchEvent = new TIntermediateCatchEvent();
 
             }
-            else if (process.getFlowElement().get(i).getValue() instanceof TIntermediateThrowEvent) {
+            else if (flowElements.get(i).getValue() instanceof TIntermediateThrowEvent) {
                 TIntermediateThrowEvent intermediateThrowEvent = new TIntermediateThrowEvent();
             }
-            else if (process.getFlowElement().get(i).getValue() instanceof TGateway) {
-                TGateway gateway = (TGateway) process.getFlowElement().get(i).getValue();
+            else if (flowElements.get(i).getValue() instanceof TGateway) {
+                TGateway gateway = (TGateway) flowElements.get(i).getValue();
                 if (gateway.getIncoming().size() > 0) {
                     for (int k = 0; k < gateway.getIncoming().size(); k++) {
                         BPMNEdge incoming = (BPMNEdge) getShapeOrEdge(String.valueOf(gateway.getIncoming().get(k)), plane);
@@ -792,8 +805,8 @@ public class XMLToJava {
                 }
             }
 
-            if (process.getFlowElement().get(i).getValue() instanceof TActivity) {
-                TActivity task = (TActivity) process.getFlowElement().get(i).getValue();
+            if (flowElements.get(i).getValue() instanceof TActivity) {
+                TActivity task = (TActivity) flowElements.get(i).getValue();
                 if (task.getOutgoing().size() > 0) {
                     BPMNEdge outgoing = (BPMNEdge) getShapeOrEdge(String.valueOf(task.getOutgoing().get(0)), plane);
                     BPMNShape shape = (BPMNShape) getShapeOrEdge(task.getId(), plane);
@@ -873,43 +886,61 @@ public class XMLToJava {
     }
 
     private void moveEverythingDown(double y, int moveAmount, BPMNPlane plane){
-        for (int i = 0; i < plane.getDiagramElement().size(); i++) {
-            if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNEdge.class) {
-                BPMNEdge edge = (BPMNEdge) plane.getDiagramElement().get(i).getValue();
-                for (int k = 0; k < edge.getWaypoint().size(); k++) {
-                    if (edge.getWaypoint().get(k).getY() > y) {
-                        edge.getWaypoint().get(k).setY(edge.getWaypoint().get(k).getY() + moveAmount);
+        boolean alreadyMoved = false;
+        for (Integer savedY: movedYDown){
+            if (inLine(new Point(0,savedY-5),new Point(0,savedY+5),new Point(0,y))){
+                alreadyMoved = true;
+            }
+        }
+        if (!alreadyMoved) {
+            movedYDown.add((int) y);
+            for (int i = 0; i < plane.getDiagramElement().size(); i++) {
+                if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNEdge.class) {
+                    BPMNEdge edge = (BPMNEdge) plane.getDiagramElement().get(i).getValue();
+                    for (int k = 0; k < edge.getWaypoint().size(); k++) {
+                        if (edge.getWaypoint().get(k).getY() > y) {
+                            edge.getWaypoint().get(k).setY(edge.getWaypoint().get(k).getY() + moveAmount);
+                        }
                     }
-                }
-            } else if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNShape.class) {
-                BPMNShape shape = (BPMNShape) plane.getDiagramElement().get(i).getValue();
-                if (shape.getBounds().getY() > y) {
-                    shape.getBounds().setY(shape.getBounds().getY() + moveAmount);
+                } else if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNShape.class) {
+                    BPMNShape shape = (BPMNShape) plane.getDiagramElement().get(i).getValue();
+                    if (shape.getBounds().getY() > y) {
+                        shape.getBounds().setY(shape.getBounds().getY() + moveAmount);
+                    }
                 }
             }
         }
     }
 
     private void moveEverythingUp(double y, int moveAmount, BPMNPlane plane){
-        for (int i = 0; i < plane.getDiagramElement().size(); i++) {
-            if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNEdge.class) {
-                BPMNEdge edge = (BPMNEdge) plane.getDiagramElement().get(i).getValue();
-                for (int k = 0; k < edge.getWaypoint().size(); k++) {
-                    if (edge.getWaypoint().get(k).getY() < y) {
-                    edge.getWaypoint().get(k).setY(edge.getWaypoint().get(k).getY() - moveAmount);
+        boolean alreadyMoved = false;
+        for (Integer savedY: movedYUp){
+            if (inLine(new Point(0,savedY-5),new Point(0,savedY+5),new Point(0,y))){
+                alreadyMoved = true;
+            }
+        }
+        if (!alreadyMoved) {
+            movedYUp.add((int) y);
+            for (int i = 0; i < plane.getDiagramElement().size(); i++) {
+                if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNEdge.class) {
+                    BPMNEdge edge = (BPMNEdge) plane.getDiagramElement().get(i).getValue();
+                    for (int k = 0; k < edge.getWaypoint().size(); k++) {
+                        if (edge.getWaypoint().get(k).getY() < y) {
+                            edge.getWaypoint().get(k).setY(edge.getWaypoint().get(k).getY() - moveAmount);
+                        }
                     }
-                }
-            } else if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNShape.class) {
-                BPMNShape shape = (BPMNShape) plane.getDiagramElement().get(i).getValue();
-                if (shape.getBounds().getY() < y) {
-                    shape.getBounds().setY(shape.getBounds().getY() - moveAmount);
+                } else if (plane.getDiagramElement().get(i).getValue().getClass() == BPMNShape.class) {
+                    BPMNShape shape = (BPMNShape) plane.getDiagramElement().get(i).getValue();
+                    if (shape.getBounds().getY() < y) {
+                        shape.getBounds().setY(shape.getBounds().getY() - moveAmount);
+                    }
                 }
             }
         }
     }
 
 
-    private int changeIoTDependantTask(List<TTask> tasks, TDataObjectReference reference, boolean isSensor, boolean convertRestToIntermediate, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
+    private int changeIoTDependantTask(List<TTask> tasks, TDataObjectReference reference, boolean isSensor, boolean convertRestToIntermediate, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
         int counter = 0;
         Iterator<TTask> iterator = tasks.iterator();
         if (isAlreadyAWhiteBox(reference.getId(),collaboration)){
@@ -931,7 +962,7 @@ public class XMLToJava {
             }
             if (task.getDataOutputAssociation().size() == 0 && task.getDataInputAssociation().size() == 1) {
                 System.out.println("Nur 1 Input");
-                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
+                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
                 if (inputTasks.size() == 1 && !convertRestToIntermediate) {
                     System.out.println("+1 " + task.getId());
                     boolean artefactCatchPresent = false;
@@ -952,19 +983,17 @@ public class XMLToJava {
                             JAXBElement<TBusinessRuleTask> taskElement = objectFactory.createBusinessRuleTask(businessRuleTask);
                             //removeFromProcess(task, process);
                             counter++;
-                            removeFromProcess(task,process);
-                            process.getFlowElement().add(taskElement);
+                            removeFromProcess(task,flowElements);
+                            flowElements.add(taskElement);
 
                         } else {
-                            changeTaskToIntermediateMessageCatchEvent(task,process,collaboration,plane);
+                            changeTaskToIntermediateMessageCatchEvent(task,flowElements,collaboration,plane);
                         }
                     } else {
-                        replaceArtefactTask(reference, task,process,plane);
+                        replaceArtefactTask(reference, task,flowElements,plane);
                     }
                 }  else if (inputTasks.size() == 1 && convertRestToIntermediate){
                     System.out.println("+2 " + task.getId());
-                    //create WhiteBox
-                    //replaceDataAssociationWithWhiteBox(reference.getId(), "Sensor (IoT)" + reference.getName(), process, collaboration, plane);
                     boolean artefactCatchPresent = false;
                     Object keyItem = reference.getOtherAttributes().keySet().toArray()[0];
                     if (reference.getOtherAttributes().get(keyItem).equals("artefact-catch")) {
@@ -973,16 +1002,16 @@ public class XMLToJava {
 
                     if (!artefactCatchPresent) {
                         toRemove.add(task);
-                        changeTaskToIntermediateMessageCatchEvent(task,process,collaboration,plane);
+                        changeTaskToIntermediateMessageCatchEvent(task,flowElements,collaboration,plane);
                     } else {
                         toRemove.add(inputTasks.get(0));
-                        replaceArtefactTask(reference,inputTasks.get(0),process,plane);
-                        changeTaskToIntermediateMessageCatchEvent(inputTasks.get(0),process,collaboration,plane);
+                        replaceArtefactTask(reference,inputTasks.get(0),flowElements,plane);
+                        changeTaskToIntermediateMessageCatchEvent(inputTasks.get(0),flowElements,collaboration,plane);
                     }
                 } else if (inputTasks.size() > 1){
                     System.out.println("+3 " + task.getId());
                     //create WhiteBox
-                    replaceDataAssociationWithWhiteBox(reference.getId(), "Sensor (IoT)" + reference.getName(), process, collaboration, plane);
+                    replaceDataAssociationWithWhiteBox(reference.getId(), "Sensor (IoT)" + reference.getName(), flowElements, collaboration, plane);
                     //TODO: somehow dataoutput is read wrong and inputtaskget(1) is not in model
                     if (inputTasks.get(1).getDataInputAssociation().size() == 1 && inputTasks.get(1).getDataOutputAssociation().size() == 0) {
                         boolean artefactCatchPresent = false;
@@ -999,21 +1028,21 @@ public class XMLToJava {
                             } else {
                                 tempTasks.add(inputTasks.get(0));
                             }
-                            removeFromProcess(inputTasks.get(0), process);
+                            removeFromProcess(inputTasks.get(0), flowElements);
                             //remove original reference
-                            changeIoTDependantTask(tempTasks, reference, isSensor, true, process, collaboration, plane);
+                            changeIoTDependantTask(tempTasks, reference, isSensor, true, flowElements, collaboration, plane);
                             for (TTask exTask : inputTasks) {
-                                changeTaskToIntermediateMessageCatchEvent(exTask, process, collaboration, plane);
+                                changeTaskToIntermediateMessageCatchEvent(exTask, flowElements, collaboration, plane);
                             }
                         } else {
-                            replaceArtefactTask(reference,inputTasks.get(0),process,plane);
-                            changeTaskToIntermediateMessageCatchEvent(inputTasks.get(0), process, collaboration, plane);
-                            replaceArtefactTask(reference,inputTasks.get(1),process,plane);
-                            changeTaskToIntermediateMessageCatchEvent(inputTasks.get(1), process, collaboration, plane);
+                            replaceArtefactTask(reference,inputTasks.get(0),flowElements,plane);
+                            changeTaskToIntermediateMessageCatchEvent(inputTasks.get(0), flowElements, collaboration, plane);
+                            replaceArtefactTask(reference,inputTasks.get(1),flowElements,plane);
+                            changeTaskToIntermediateMessageCatchEvent(inputTasks.get(1), flowElements, collaboration, plane);
                         }
                     } else if (inputTasks.size() < 3) {
                         System.out.println("+4 "  + task.getId());
-                        replaceDataAssociationWithWhiteBox(reference.getId(), "Sensor (IoT)" + reference.getName(), process, collaboration, plane);
+                        replaceDataAssociationWithWhiteBox(reference.getId(), "Sensor (IoT)" + reference.getName(), flowElements, collaboration, plane);
                         ArrayList<TTask> temp = new ArrayList<>();
                         if (task.getId().equals(inputTasks.get(0))) {
                             temp.add(inputTasks.get(1));
@@ -1022,16 +1051,16 @@ public class XMLToJava {
                             temp.add(inputTasks.get(0));
                             //toRemove.add(inputTasks.get(1));
                         }
-                        changeTaskToIntermediateMessageCatchEvent(task, process, collaboration, plane);
-                        changeIoTDependantTask(temp, reference, isSensor, true, process,collaboration,plane);
-                        changeTaskToIntermediateMessageCatchEvent(task, process, collaboration, plane);
+                        changeTaskToIntermediateMessageCatchEvent(task, flowElements, collaboration, plane);
+                        changeIoTDependantTask(temp, reference, isSensor, true, flowElements,collaboration,plane);
+                        changeTaskToIntermediateMessageCatchEvent(task, flowElements, collaboration, plane);
                     }
                 }
-                removeFromProcess(reference, process);
+                removeFromProcess(reference, flowElements);
             } else if (task.getDataOutputAssociation().size() == 1 && task.getDataInputAssociation().size() == 1) {
                 System.out.println("1 Input und 1 Output");
-                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
-                List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
+                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
+                List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
 
                 boolean artefactCatchPresent = false;
                 TServiceTask serviceTask = null;
@@ -1043,9 +1072,9 @@ public class XMLToJava {
 
                 if (!artefactCatchPresent && inputTasks.size() > 0) {
                     System.out.println("jupppiii");
-                    serviceTask = replaceOneInputAndOneOutputAssociation(task, process, collaboration, plane).getValue();
+                    serviceTask = replaceOneInputAndOneOutputAssociation(task, flowElements, collaboration, plane).getValue();
                 } else if (inputTasks.size() > 0){
-                    serviceTask = replaceSeveralInputArtefactAndOneActuatorAssociation(task, reference, process, collaboration, plane).getValue();
+                    serviceTask = replaceSeveralInputArtefactAndOneActuatorAssociation(task, reference, flowElements, collaboration, plane).getValue();
                 }
                 //outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
 //                if (serviceTask != null) {
@@ -1063,29 +1092,24 @@ public class XMLToJava {
                         //toRemove.add(inputTasks.get(1));
                     }
                     //removeFromProcess(reference,process);
-                    changeIoTDependantTask(temp,reference,isSensor, true,process,collaboration,plane);
+                    changeIoTDependantTask(temp,reference,isSensor, true,flowElements,collaboration,plane);
                 } if (outputTasks.size() > 1){
                     System.out.println("-2");
                     ArrayList<TTask> temp = new ArrayList<>();
                     if (outputTasks.get(0).getId().equals(task.getId())){
                         temp.add(outputTasks.get(1));
-                       // toRemove.add(outputTasks.get(0));
                     } else {
                         temp.add(outputTasks.get(0));
-                      //  toRemove.add(outputTasks.get(1));
                     }
-                    //removeFromProcess(reference,process);
-                    changeIoTDependantTask(temp,reference,isSensor, true,process,collaboration,plane);
+                    changeIoTDependantTask(temp,reference,isSensor, true,flowElements,collaboration,plane);
 
                 }
-                removeFromProcess(reference, process);
-//                removeTaskFlows(task, collaboration);
-//                removeFromProcess(task, process);
+                removeFromProcess(reference, flowElements);
 
             } else if (task.getDataOutputAssociation().size() == 0 && task.getDataInputAssociation().size() > 1) {
                 System.out.println("2 Inputs");
-                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
-                List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, process);
+                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
+                List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, flowElements);
                 boolean artefactCatchPresent = false;
                 //TODO
                 Object keyItem = ((TDataObjectReference)task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()).getOtherAttributes().keySet().toArray()[0];
@@ -1098,10 +1122,10 @@ public class XMLToJava {
                 }
                 System.out.println(inputTasks.size() + " 5555 " + input2Tasks.size());
                 if (!artefactCatchPresent && inputTasks.size() > 0 && input2Tasks.size() > 0) {
-                    replaceSeveralInputAssociation(task, reference, process, collaboration, plane);
+                    replaceSeveralInputAssociation(task, reference, flowElements, collaboration, plane);
                 } else if (inputTasks.size() > 0 && input2Tasks.size() > 0){
                     System.out.println("am here");
-                    replaceSeveralInputArtefactAndSensorAssociation(task,reference, process, collaboration, plane);
+                    replaceSeveralInputArtefactAndSensorAssociation(task,reference, flowElements, collaboration, plane);
                 }
 
 
@@ -1121,7 +1145,7 @@ public class XMLToJava {
                         temp.add(inputTasks.get(0));
                         toRemove.add(inputTasks.get(1));
                     }
-                    removeFromProcess(reference,process);
+                    removeFromProcess(reference,flowElements);
                     //changeIoTDependantTask(temp,reference,isSensor, true,process,collaboration,plane);
                 }
                 else if (inputTasks.size() > 1  && !convertRestToIntermediate) {
@@ -1133,8 +1157,8 @@ public class XMLToJava {
                         temp.add(inputTasks.get(0));
                         toRemove.add(inputTasks.get(1));
                     }
-                    removeFromProcess(reference, process);
-                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, process, collaboration, plane);
+                    removeFromProcess(reference, flowElements);
+                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, flowElements, collaboration, plane);
                 }
                 else if (input2Tasks.size() > 1  && !convertRestToIntermediate){
                     ArrayList<TTask> temp = new ArrayList<>();
@@ -1145,15 +1169,15 @@ public class XMLToJava {
                         temp.add(input2Tasks.get(0));
                         toRemove.add(input2Tasks.get(1));
                     }
-                    removeFromProcess(reference,process);
-                    changeIoTDependantTask(temp,(TDataObjectReference) task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue(),isSensor, true,process,collaboration,plane);
+                    removeFromProcess(reference,flowElements);
+                    changeIoTDependantTask(temp,(TDataObjectReference) task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue(),isSensor, true,flowElements,collaboration,plane);
                 }
 
             } else if (task.getDataOutputAssociation().size() == 1 && task.getDataInputAssociation().size() > 1) {
                 System.out.println("1 Output 2 Input");
-                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
-                List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, process);
-                List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
+                List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
+                List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, flowElements);
+                List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
                 boolean artefactCatchPresent = false;
                 if (inputTasks.size() > 0 && input2Tasks.size() > 0 && outputTasks.size() > 0) {
                     for (int j = 0; j < inputTasks.get(0).getDataInputAssociation().size(); j++) {
@@ -1164,9 +1188,9 @@ public class XMLToJava {
 
                     }
                     if (!artefactCatchPresent) {
-                        replaceOneInputAndOneOutputAssociation(task, process, collaboration, plane).getKey();
+                        replaceOneInputAndOneOutputAssociation(task, flowElements, collaboration, plane).getKey();
                     } else {
-                        replaceOneSensorOneCatchArtefactOneActuatorAssociation(task, process, collaboration, plane);
+                        replaceOneSensorOneCatchArtefactOneActuatorAssociation(task, reference, flowElements, collaboration, plane);
                     }
                 }
 
@@ -1179,8 +1203,8 @@ public class XMLToJava {
                         temp.add(input2Tasks.get(0));
                         toRemove.add(input2Tasks.get(1));
                     }
-                    removeFromProcess(reference, process);
-                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, process, collaboration, plane);
+                    removeFromProcess(reference, flowElements);
+                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, flowElements, collaboration, plane);
 
                 } else if (inputTasks.size() > 1 && input2Tasks.size() > 1 && outputTasks.size() == 1) {
                     ArrayList<TTask> temp = new ArrayList<>();
@@ -1191,8 +1215,8 @@ public class XMLToJava {
                         temp.add(input2Tasks.get(0));
                         toRemove.add(input2Tasks.get(1));
                     }
-                    removeFromProcess(reference, process);
-                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, process, collaboration, plane);
+                    removeFromProcess(reference, flowElements);
+                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, flowElements, collaboration, plane);
 
                 } else if (inputTasks.size() > 1 && input2Tasks.size() == 1 && outputTasks.size() > 1) {
                     ArrayList<TTask> temp = new ArrayList<>();
@@ -1203,8 +1227,8 @@ public class XMLToJava {
                         temp.add(inputTasks.get(0));
                         toRemove.add(inputTasks.get(1));
                     }
-                    removeFromProcess(reference, process);
-                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, process, collaboration, plane);
+                    removeFromProcess(reference, flowElements);
+                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, flowElements, collaboration, plane);
 
                 } else if (inputTasks.size() == 1 && input2Tasks.size() > 1 && outputTasks.size() > 1) {
                     ArrayList<TTask> temp = new ArrayList<>();
@@ -1217,8 +1241,8 @@ public class XMLToJava {
                         toRemove.add(input2Tasks.get(1));
                         toRemove.add(outputTasks.get(1));
                     }
-                    removeFromProcess(reference, process);
-                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, process, collaboration, plane);
+                    removeFromProcess(reference, flowElements);
+                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, flowElements, collaboration, plane);
                 }else if (inputTasks.size() > 1  && !convertRestToIntermediate) {
                     ArrayList<TTask> temp = new ArrayList<>();
                     if (inputTasks.get(0).getId().equals(task.getId())){
@@ -1228,8 +1252,8 @@ public class XMLToJava {
                         temp.add(inputTasks.get(0));
                         toRemove.add(inputTasks.get(1));
                     }
-                    removeFromProcess(reference, process);
-                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, process, collaboration, plane);
+                    removeFromProcess(reference, flowElements);
+                    changeIoTDependantTask(temp, (TDataObjectReference) task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue(), isSensor, true, flowElements, collaboration, plane);
                 }
                 else if (input2Tasks.size() > 1  && !convertRestToIntermediate){
                     ArrayList<TTask> temp = new ArrayList<>();
@@ -1240,8 +1264,8 @@ public class XMLToJava {
                         temp.add(input2Tasks.get(0));
                         toRemove.add(input2Tasks.get(1));
                     }
-                    removeFromProcess(reference,process);
-                    changeIoTDependantTask(temp,(TDataObjectReference) task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue(),isSensor, true,process,collaboration,plane);
+                    removeFromProcess(reference,flowElements);
+                    changeIoTDependantTask(temp,(TDataObjectReference) task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue(),isSensor, true,flowElements,collaboration,plane);
                 }else if (outputTasks.size() > 1  && !convertRestToIntermediate){
                     ArrayList<TTask> temp = new ArrayList<>();
                     if (outputTasks.get(0).getId().equals(task.getId())){
@@ -1251,15 +1275,15 @@ public class XMLToJava {
                         temp.add(outputTasks.get(0));
                         toRemove.add(outputTasks.get(1));
                     }
-                    removeFromProcess(reference,process);
-                    changeIoTDependantTask(temp,(TDataObjectReference) task.getDataOutputAssociation().get(0).getTargetRef(),isSensor, true,process,collaboration,plane);
+                    removeFromProcess(reference,flowElements);
+                    changeIoTDependantTask(temp,(TDataObjectReference) task.getDataOutputAssociation().get(0).getTargetRef(),isSensor, true,flowElements,collaboration,plane);
                 }
 
-                removeFromProcess(task, process);
+                removeFromProcess(task, flowElements);
 
             } else if (task.getDataOutputAssociation().size() == 1 && task.getDataInputAssociation().size() == 0) {
                 System.out.println("1 Output " + task.getId());
-                List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
+                List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
                 System.out.println("outputs: " + outputTasks.size());
                 if (outputTasks.size() == 1 && !convertRestToIntermediate) {
                     System.out.println("o1");
@@ -1271,32 +1295,32 @@ public class XMLToJava {
                     serviceTask.getProperty().addAll(task.getProperty());
 
                     JAXBElement<TServiceTask> taskElement = objectFactory.createServiceTask(serviceTask);
-                    removeFromProcess(task, process);
+                    removeFromProcess(task, flowElements);
                     counter++;
-                    removeFromProcess(reference, process);
-                    process.getFlowElement().add(taskElement);
+                    removeFromProcess(reference, flowElements);
+                    flowElements.add(taskElement);
                 } else if (outputTasks.size() == 1 && convertRestToIntermediate){
                     System.out.println("o2");
-                    changeTaskToIntermediateMessageThrowEvent(task,process,collaboration,plane);
+                    changeTaskToIntermediateMessageThrowEvent(task,flowElements,collaboration,plane);
                 }  else if (outputTasks.size() > 1){
                     System.out.println("o3");
                     //create WhiteBox
-                    replaceDataAssociationWithWhiteBox(reference.getId(), "Actuator (IoT)" + reference.getName(), process, collaboration, plane);
+                    replaceDataAssociationWithWhiteBox(reference.getId(), "Actuator (IoT)" + reference.getName(), flowElements, collaboration, plane);
                     if (outputTasks.get(1).getDataInputAssociation().size() == 1 && outputTasks.get(1).getDataOutputAssociation().size() == 0) {
 
                         List<TTask> tempTasks = new ArrayList<>();
                         tempTasks.add(outputTasks.get(1));
-                        removeFromProcess(outputTasks.get(0),process);
-                        changeIoTDependantTask(tempTasks, reference, isSensor, false, process, collaboration, plane);
+                        removeFromProcess(outputTasks.get(0),flowElements);
+                        changeIoTDependantTask(tempTasks, reference, isSensor, false, flowElements, collaboration, plane);
                         //remove original reference
-                        removeFromProcess(reference, process);
+                        removeFromProcess(reference, flowElements);
                         for (TTask exTask : outputTasks) {
-                            changeTaskToIntermediateMessageThrowEvent(exTask, process, collaboration, plane);
+                            changeTaskToIntermediateMessageThrowEvent(exTask, flowElements, collaboration, plane);
                         }
                     } else {
-                        removeFromProcess(reference, process);
-                        changeTaskToIntermediateMessageThrowEvent(outputTasks.get(0),process,collaboration,plane);
-                        changeTaskToIntermediateMessageThrowEvent(outputTasks.get(1),process,collaboration,plane);
+                        removeFromProcess(reference, flowElements);
+                        changeTaskToIntermediateMessageThrowEvent(outputTasks.get(0),flowElements,collaboration,plane);
+                        changeTaskToIntermediateMessageThrowEvent(outputTasks.get(1),flowElements,collaboration,plane);
                     }
                 }
             }
@@ -1316,15 +1340,15 @@ public class XMLToJava {
         }
     }
 
-    private Triplet<TBusinessRuleTask, TServiceTask, TBusinessRuleTask> replaceOneSensorOneCatchArtefactOneActuatorAssociation(TTask task, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
-        List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
+    private Triplet<TBusinessRuleTask, TServiceTask, TBusinessRuleTask> replaceOneSensorOneCatchArtefactOneActuatorAssociation(TTask task, TDataObjectReference reference, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
+        List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
         List<TTask> inputTasksSensor = new ArrayList<>();
         List<TTask> inputTasksCatch = new ArrayList<>();
         List<TDataObjectReference> sensors = new ArrayList<>();
         List<TDataObjectReference> artefact = new ArrayList<>();
         List<TDataInputAssociation> sensorInputs = new ArrayList<>();
         List<TDataInputAssociation> artefactInputs = new ArrayList<>();
-        List<TTask> input1Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
+        List<TTask> input1Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
         for (int i = 0; i < input1Tasks.size(); i++) {
             for (int j = 0; j < input1Tasks.get(i).getDataInputAssociation().size(); j++) {
                 Object keyItem = ((TDataObjectReference) input1Tasks.get(i).getDataInputAssociation().get(j).getSourceRef().get(0).getValue()).getOtherAttributes().keySet().toArray()[0];
@@ -1339,7 +1363,7 @@ public class XMLToJava {
                 }
             }
         }
-        List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, process);
+        List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, flowElements);
         for (int i = 0; i < input2Tasks.size(); i++) {
             for (int j = 0; j < input2Tasks.get(i).getDataInputAssociation().size(); j++) {
                 Object keyItem = ((TDataObjectReference) input2Tasks.get(i).getDataInputAssociation().get(j).getSourceRef().get(0).getValue()).getOtherAttributes().keySet().toArray()[0];
@@ -1399,12 +1423,12 @@ public class XMLToJava {
 
         //change incoming and outgoing flow attributes
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             incoming.setTargetRef(leftGateWay);
         }
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             outgoing.setSourceRef(rightGateWay);
         }
@@ -1458,7 +1482,15 @@ public class XMLToJava {
         rightFlow_3.setId(rightFlow_3_Id);
         rightFlow_3.setSourceRef(xorGateRight);
         rightFlow_3.setTargetRef(rightGateWay);
-        rightFlow_3.setName("if");  //TODO
+        List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()),flowElements);
+        String name = "";
+        for (TDataObjectReference referenceItem: references){
+            if (referenceItem.getName().contains("<") || referenceItem.getName().contains(">") || referenceItem.getName().contains("=")){
+                name = referenceItem.getName();
+                break;
+            }
+        }
+        rightFlow_3.setName(name);
 
         xorLeftSequenceFlow.setId(xorLeftFlow);
         xorLeftSequenceFlow.setSourceRef(xorGateLeft);
@@ -1495,25 +1527,25 @@ public class XMLToJava {
         xorGateRight.getOutgoing().add(QName.valueOf(rightFlow_3.getId()));
 
         //add elements to the process
-        process.getFlowElement().add(objectFactory.createBusinessRuleTask(businessRuleTask));
-        process.getFlowElement().add(objectFactory.createBusinessRuleTask(businessRuleTaskCatch));
-        process.getFlowElement().add(objectFactory.createServiceTask(serviceTask));
-        process.getFlowElement().add(objectFactory.createParallelGateway(leftGateWay));
-        process.getFlowElement().add(objectFactory.createParallelGateway(rightGateWay));
-        process.getFlowElement().add(objectFactory.createExclusiveGateway(xorGateLeft));
-        process.getFlowElement().add(objectFactory.createExclusiveGateway(xorGateRight));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_1));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_2));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_3));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_1));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_2));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_3));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(xorElseSequenceFlow));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(catchRightSequenceFlow));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(xorLeftSequenceFlow));
+        flowElements.add(objectFactory.createBusinessRuleTask(businessRuleTask));
+        flowElements.add(objectFactory.createBusinessRuleTask(businessRuleTaskCatch));
+        flowElements.add(objectFactory.createServiceTask(serviceTask));
+        flowElements.add(objectFactory.createParallelGateway(leftGateWay));
+        flowElements.add(objectFactory.createParallelGateway(rightGateWay));
+        flowElements.add(objectFactory.createExclusiveGateway(xorGateLeft));
+        flowElements.add(objectFactory.createExclusiveGateway(xorGateRight));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_1));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_2));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_3));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_1));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_2));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_3));
+        flowElements.add(objectFactory.createSequenceFlow(xorElseSequenceFlow));
+        flowElements.add(objectFactory.createSequenceFlow(catchRightSequenceFlow));
+        flowElements.add(objectFactory.createSequenceFlow(xorLeftSequenceFlow));
 
         BPMNShape taskShape = (BPMNShape) getShapeOrEdge(task.getId(), plane);
-        removeFromProcess(task,process);
+        removeFromProcess(task,flowElements);
 
         org.omg.spec.bpmn._20100524.di.ObjectFactory planeObjectFactory = new org.omg.spec.bpmn._20100524.di.ObjectFactory();
 
@@ -1603,7 +1635,7 @@ public class XMLToJava {
 
         //adjust the already existing edges
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             BPMNEdge incomingEdge = (BPMNEdge) getShapeOrEdge(incoming.getId(), plane);
             assert incomingEdge != null;
@@ -1611,7 +1643,7 @@ public class XMLToJava {
         }
 
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             BPMNEdge outgoingEdge = (BPMNEdge) getShapeOrEdge(outgoing.getId(), plane);
             if (outgoingEdge != null) {
@@ -1712,50 +1744,50 @@ public class XMLToJava {
         plane.getDiagramElement().add(objectFactoryEdge.createBPMNEdge(xorElseEdge));
 
         //remove all unneeded references and objects
-        List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), process);
+        references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), flowElements);
         for (TDataObjectReference data : references) {
-            removeFromProcess(data, process);
+            removeFromProcess(data, flowElements);
         }
-        List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), process);
+        List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), flowElements);
         for (TDataObjectReference data : references2) {
-            removeFromProcess(data, process);
+            removeFromProcess(data, flowElements);
         }
         if (inputTasksCatch.size() > 1 || isAlreadyAWhiteBox(artefact.get(0).getId(),collaboration)) {
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(artefact.get(0).getId(), "Sensor (IoT)" + artefact.get(0).getName(), process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(artefact.get(0).getId(), "Sensor (IoT)" + artefact.get(0).getName(), flowElements, collaboration, plane);
             //replace businessRuleTask to catch event
-            changeTaskToIntermediateMessageCatchEvent(businessRuleTaskCatch, process, collaboration, plane);
+            changeTaskToIntermediateMessageCatchEvent(businessRuleTaskCatch, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(artefact.get(0), process);
+            removeFromProcess(artefact.get(0), flowElements);
 
         }
         if (inputTasksSensor.size() > 1 || isAlreadyAWhiteBox(sensors.get(0).getId(),collaboration)){
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(sensors.get(0).getId(), "Sensor (IoT)" + sensors.get(0).getName(), process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(sensors.get(0).getId(), "Sensor (IoT)" + sensors.get(0).getName(), flowElements, collaboration, plane);
             //replace businessRuleTask to catch event
-            changeTaskToIntermediateMessageCatchEvent(businessRuleTask, process, collaboration, plane);
+            changeTaskToIntermediateMessageCatchEvent(businessRuleTask, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(sensors.get(0), process);
+            removeFromProcess(sensors.get(0), flowElements);
         }
         if (outputTasks.size() > 1 || isAlreadyAWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()),collaboration)) {
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), "Actuator (IoT)" + ((TDataObjectReference)task.getDataOutputAssociation().get(0).getTargetRef()).getName(), process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), "Actuator (IoT)" + ((TDataObjectReference)task.getDataOutputAssociation().get(0).getTargetRef()).getName(), flowElements, collaboration, plane);
             //replace serviceTask to throw event
-            changeTaskToIntermediateMessageThrowEvent(serviceTask, process, collaboration, plane);
+            changeTaskToIntermediateMessageThrowEvent(serviceTask, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(task.getDataOutputAssociation().get(0), process);
+            removeFromProcess(task.getDataOutputAssociation().get(0), flowElements);
 
         }
         return new Triplet<>(businessRuleTask, serviceTask, businessRuleTaskCatch);
     }
 
 
-    private Pair<TBusinessRuleTask, TServiceTask> replaceOneInputAndOneOutputAssociation(TTask task, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
-        List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
-        List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
+    private Pair<TBusinessRuleTask, TServiceTask> replaceOneInputAndOneOutputAssociation(TTask task,  List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
+        List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
+        List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
 
         System.out.println(outputTasks.size() + " ---- " + inputTasks.size());
         String leftGW_Id = "Gateway_" + randomNumberSequence();
@@ -1779,12 +1811,12 @@ public class XMLToJava {
 
         //change incoming and outgoing flow attributes
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             incoming.setTargetRef(leftGateWay);
         }
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             outgoing.setSourceRef(rightGateWay);
         }
@@ -1836,14 +1868,14 @@ public class XMLToJava {
 
         //add elements to the process
 
-        process.getFlowElement().add(objectFactory.createBusinessRuleTask(businessRuleTask));
-        process.getFlowElement().add(objectFactory.createServiceTask(serviceTask));
-        process.getFlowElement().add(objectFactory.createParallelGateway(leftGateWay));
-        process.getFlowElement().add(objectFactory.createParallelGateway(rightGateWay));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_1));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_2));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_1));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_2));
+        flowElements.add(objectFactory.createBusinessRuleTask(businessRuleTask));
+        flowElements.add(objectFactory.createServiceTask(serviceTask));
+        flowElements.add(objectFactory.createParallelGateway(leftGateWay));
+        flowElements.add(objectFactory.createParallelGateway(rightGateWay));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_1));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_2));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_1));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_2));
 
         BPMNShape taskShape = (BPMNShape) getShapeOrEdge(task.getId(), plane);
         moveEverythingDown(taskShape.getBounds().getY()+taskShape.getBounds().getHeight(),50,plane);
@@ -1901,7 +1933,7 @@ public class XMLToJava {
 
         //adjust the already existing edges
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             BPMNEdge incomingEdge = (BPMNEdge) getShapeOrEdge(incoming.getId(), plane);
             assert incomingEdge != null;
@@ -1909,7 +1941,7 @@ public class XMLToJava {
         }
 
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             BPMNEdge outgoingEdge = (BPMNEdge) getShapeOrEdge(outgoing.getId(), plane);
             if (outgoingEdge != null) {
@@ -1968,44 +2000,44 @@ public class XMLToJava {
         plane.getDiagramElement().add(createEdge(rightFlow_2.getId(), rightFlow2X, rightFlow2Y));
 
         //remove all unneeded references and objects
-        List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), process);
+        List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), flowElements);
         for (TDataObjectReference data : references) {
-            removeFromProcess(data, process);
+            removeFromProcess(data, flowElements);
         }
-        List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), process);
+        List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), flowElements);
         for (TDataObjectReference data : references2) {
-            removeFromProcess(data, process);
+            removeFromProcess(data, flowElements);
         }
         if (inputTasks.size() > 1 || isAlreadyAWhiteBox(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()),collaboration)) {
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), "Sensor (IoT)" + task.getDataInputAssociation().get(0).getSourceRef().get(0).getName(), process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), "Sensor (IoT)" + task.getDataInputAssociation().get(0).getSourceRef().get(0).getName(), flowElements, collaboration, plane);
             //replace businessRuleTask to catch event
-            changeTaskToIntermediateMessageCatchEvent(businessRuleTask, process, collaboration, plane);
+            changeTaskToIntermediateMessageCatchEvent(businessRuleTask, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(task.getDataInputAssociation().get(0), process);
+            removeFromProcess(task.getDataInputAssociation().get(0), flowElements);
         }
         if (outputTasks.size() > 1 || isAlreadyAWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()),collaboration)) {
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), "Actuator (IoT)" + getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), "Actuator (IoT)" + getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), flowElements, collaboration, plane);
             //replace serviceTask to throw event
-            changeTaskToIntermediateMessageThrowEvent(serviceTask, process, collaboration, plane);
+            changeTaskToIntermediateMessageThrowEvent(serviceTask, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(task.getDataOutputAssociation().get(0), process);
+            removeFromProcess(task.getDataOutputAssociation().get(0), flowElements);
         }
-        removeFromProcess(task,process);
+        removeFromProcess(task,flowElements);
         return new Pair<>(businessRuleTask, serviceTask);
     }
 
-    private Pair<TBusinessRuleTask, TBusinessRuleTask> replaceSeveralInputArtefactAndSensorAssociation(TTask task, TDataObjectReference reference, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
+    private Pair<TBusinessRuleTask, TBusinessRuleTask> replaceSeveralInputArtefactAndSensorAssociation(TTask task, TDataObjectReference reference, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
         List<TTask> inputTasksSensor = new ArrayList<>();
         List<TTask> inputTasksCatch = new ArrayList<>();
         List<TDataObjectReference> sensors = new ArrayList<>();
         List<TDataObjectReference> artefact = new ArrayList<>();
         List<TDataInputAssociation> sensorInputs = new ArrayList<>();
         List<TDataInputAssociation> artefactInputs = new ArrayList<>();
-        List<TTask> input1Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
+        List<TTask> input1Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
         for (int i = 0; i < input1Tasks.size(); i++) {
             for (int j = 0; j < input1Tasks.get(i).getDataInputAssociation().size(); j++) {
                 Object keyItem = ((TDataObjectReference) input1Tasks.get(i).getDataInputAssociation().get(j).getSourceRef().get(0).getValue()).getOtherAttributes().keySet().toArray()[0];
@@ -2020,7 +2052,7 @@ public class XMLToJava {
                 }
             }
         }
-        List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, process);
+        List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, flowElements);
         for (int i = 0; i < input2Tasks.size(); i++) {
             for (int j = 0; j < input2Tasks.get(i).getDataInputAssociation().size(); j++) {
                 Object keyItem = ((TDataObjectReference) input2Tasks.get(i).getDataInputAssociation().get(j).getSourceRef().get(0).getValue()).getOtherAttributes().keySet().toArray()[0];
@@ -2074,12 +2106,12 @@ public class XMLToJava {
 
         //change incoming and outgoing flow attributes
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             incoming.setTargetRef(leftGateWay);
         }
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             outgoing.setSourceRef(rightGateWay);
         }
@@ -2116,7 +2148,15 @@ public class XMLToJava {
         rightFlow_3.setId(rightFlow_3_Id);
         rightFlow_3.setSourceRef(xorGateRight);
         rightFlow_3.setTargetRef(rightGateWay);
-        rightFlow_3.setName("if");  //TODO
+        List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()),flowElements);
+        String name = "";
+        for (TDataObjectReference referenceItem: references){
+            if (referenceItem.getName().contains("<") || referenceItem.getName().contains(">") || referenceItem.getName().contains("=")){
+                name = referenceItem.getName();
+                break;
+            }
+        }
+        rightFlow_3.setName(name);
 
         xorLeftSequenceFlow.setId(xorLeftFlow);
         xorLeftSequenceFlow.setSourceRef(xorGateLeft);
@@ -2153,22 +2193,22 @@ public class XMLToJava {
         xorGateRight.getOutgoing().add(QName.valueOf(rightFlow_3.getId()));
 
         //add elements to the process
-        process.getFlowElement().add(objectFactory.createBusinessRuleTask(businessRuleTask));
-        process.getFlowElement().add(objectFactory.createBusinessRuleTask(businessRuleTaskCatch));
-        process.getFlowElement().add(objectFactory.createParallelGateway(leftGateWay));
-        process.getFlowElement().add(objectFactory.createParallelGateway(rightGateWay));
-        process.getFlowElement().add(objectFactory.createExclusiveGateway(xorGateLeft));
-        process.getFlowElement().add(objectFactory.createExclusiveGateway(xorGateRight));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_2));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_3));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_2));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_3));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(xorElseSequenceFlow));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(catchRightSequenceFlow));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(xorLeftSequenceFlow));
+        flowElements.add(objectFactory.createBusinessRuleTask(businessRuleTask));
+        flowElements.add(objectFactory.createBusinessRuleTask(businessRuleTaskCatch));
+        flowElements.add(objectFactory.createParallelGateway(leftGateWay));
+        flowElements.add(objectFactory.createParallelGateway(rightGateWay));
+        flowElements.add(objectFactory.createExclusiveGateway(xorGateLeft));
+        flowElements.add(objectFactory.createExclusiveGateway(xorGateRight));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_2));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_3));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_2));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_3));
+        flowElements.add(objectFactory.createSequenceFlow(xorElseSequenceFlow));
+        flowElements.add(objectFactory.createSequenceFlow(catchRightSequenceFlow));
+        flowElements.add(objectFactory.createSequenceFlow(xorLeftSequenceFlow));
 
         BPMNShape taskShape = (BPMNShape) getShapeOrEdge(task.getId(), plane);
-        removeFromProcess(task,process);
+        removeFromProcess(task,flowElements);
 
         org.omg.spec.bpmn._20100524.di.ObjectFactory planeObjectFactory = new org.omg.spec.bpmn._20100524.di.ObjectFactory();
 
@@ -2247,7 +2287,7 @@ public class XMLToJava {
 
         //adjust the already existing edges
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             BPMNEdge incomingEdge = (BPMNEdge) getShapeOrEdge(incoming.getId(), plane);
             assert incomingEdge != null;
@@ -2255,7 +2295,7 @@ public class XMLToJava {
         }
 
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             BPMNEdge outgoingEdge = (BPMNEdge) getShapeOrEdge(outgoing.getId(), plane);
             if (outgoingEdge != null) {
@@ -2331,43 +2371,42 @@ public class XMLToJava {
 
         //remove all unneeded references and objects
         if (task.getDataInputAssociation().size() > 0) {
-            List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), process);
+            references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), flowElements);
             for (TDataObjectReference data : references) {
-                removeFromProcess(data, process);
+                removeFromProcess(data, flowElements);
             }
         }
         if (task.getDataOutputAssociation().size() > 0) {
-            List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), process);
+            List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), flowElements);
             for (TDataObjectReference data : references2) {
-                removeFromProcess(data, process);
+                removeFromProcess(data, flowElements);
             }
         }
         if (inputTasksCatch.size() > 1 || isAlreadyAWhiteBox(artefact.get(0).getId(),collaboration)) {
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(artefact.get(0).getId(), "Sensor (IoT)" + artefact.get(0).getName(), process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(artefact.get(0).getId(), "Sensor (IoT)" + artefact.get(0).getName(), flowElements, collaboration, plane);
             //replace businessRuleTask to catch event
-            changeTaskToIntermediateMessageCatchEvent(businessRuleTaskCatch, process, collaboration, plane);
+            changeTaskToIntermediateMessageCatchEvent(businessRuleTaskCatch, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(artefact.get(0), process);
+            removeFromProcess(artefact.get(0), flowElements);
 
         }
         if (inputTasksSensor.size() > 1 || isAlreadyAWhiteBox(sensors.get(0).getId(),collaboration)){
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(sensors.get(0).getId(), "Sensor (IoT)" + sensors.get(0).getName(), process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(sensors.get(0).getId(), "Sensor (IoT)" + sensors.get(0).getName(), flowElements, collaboration, plane);
             //replace businessRuleTask to catch event
-            changeTaskToIntermediateMessageCatchEvent(businessRuleTask, process, collaboration, plane);
+            changeTaskToIntermediateMessageCatchEvent(businessRuleTask, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(sensors.get(0), process);
+            removeFromProcess(sensors.get(0), flowElements);
         }
         return new Pair<>(businessRuleTask,businessRuleTaskCatch);
     }
 
-    private Pair<TBusinessRuleTask, TServiceTask> replaceSeveralInputArtefactAndOneActuatorAssociation(TTask task, TDataObjectReference reference, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
-        List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
-        List<TTask> inputTasksCatch = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, process);
-
+    private Pair<TBusinessRuleTask, TServiceTask> replaceSeveralInputArtefactAndOneActuatorAssociation(TTask task, TDataObjectReference reference, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
+        List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
+        List<TTask> inputTasksCatch = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
 
         String leftGW_Id = "Gateway_" + randomNumberSequence();
         String rightGW_Id = "Gateway_" + randomNumberSequence();
@@ -2401,12 +2440,12 @@ public class XMLToJava {
 
         //change incoming and outgoing flow attributes
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             incoming.setTargetRef(leftGateWay);
         }
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             outgoing.setSourceRef(rightGateWay);
         }
@@ -2447,7 +2486,15 @@ public class XMLToJava {
         rightFlow_3.setId(rightFlow_3_Id);
         rightFlow_3.setSourceRef(xorGateRight);
         rightFlow_3.setTargetRef(rightGateWay);
-        rightFlow_3.setName("if");  //TODO
+        List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()),flowElements);
+        String name = "";
+        for (TDataObjectReference referenceItem: references){
+            if (referenceItem.getName().contains("<") || referenceItem.getName().contains(">") || referenceItem.getName().contains("=")){
+                name = referenceItem.getName();
+                break;
+            }
+        }
+        rightFlow_3.setName(name);
 
         xorLeftSequenceFlow.setId(xorLeftFlow);
         xorLeftSequenceFlow.setSourceRef(xorGateLeft);
@@ -2484,22 +2531,22 @@ public class XMLToJava {
         xorGateRight.getOutgoing().add(QName.valueOf(rightFlow_3.getId()));
 
         //add elements to the process
-        process.getFlowElement().add(objectFactory.createBusinessRuleTask(businessRuleTaskCatch));
-        process.getFlowElement().add(objectFactory.createServiceTask(serviceTask));
-        process.getFlowElement().add(objectFactory.createParallelGateway(leftGateWay));
-        process.getFlowElement().add(objectFactory.createParallelGateway(rightGateWay));
-        process.getFlowElement().add(objectFactory.createExclusiveGateway(xorGateLeft));
-        process.getFlowElement().add(objectFactory.createExclusiveGateway(xorGateRight));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_1));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(leftFlow_3));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_1));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(rightFlow_3));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(xorElseSequenceFlow));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(catchRightSequenceFlow));
-        process.getFlowElement().add(objectFactory.createSequenceFlow(xorLeftSequenceFlow));
+        flowElements.add(objectFactory.createBusinessRuleTask(businessRuleTaskCatch));
+        flowElements.add(objectFactory.createServiceTask(serviceTask));
+        flowElements.add(objectFactory.createParallelGateway(leftGateWay));
+        flowElements.add(objectFactory.createParallelGateway(rightGateWay));
+        flowElements.add(objectFactory.createExclusiveGateway(xorGateLeft));
+        flowElements.add(objectFactory.createExclusiveGateway(xorGateRight));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_1));
+        flowElements.add(objectFactory.createSequenceFlow(leftFlow_3));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_1));
+        flowElements.add(objectFactory.createSequenceFlow(rightFlow_3));
+        flowElements.add(objectFactory.createSequenceFlow(xorElseSequenceFlow));
+        flowElements.add(objectFactory.createSequenceFlow(catchRightSequenceFlow));
+        flowElements.add(objectFactory.createSequenceFlow(xorLeftSequenceFlow));
 
         BPMNShape taskShape = (BPMNShape) getShapeOrEdge(task.getId(), plane);
-        removeFromProcess(task,process);
+        removeFromProcess(task,flowElements);
 
         org.omg.spec.bpmn._20100524.di.ObjectFactory planeObjectFactory = new org.omg.spec.bpmn._20100524.di.ObjectFactory();
 
@@ -2578,7 +2625,7 @@ public class XMLToJava {
 
         //adjust the already existing edges
         for (int k = 0; k < task.getIncoming().size(); k++) {
-            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), process);
+            TSequenceFlow incoming = getFlow(task.getIncoming().get(k).getLocalPart(), flowElements);
             assert incoming != null;
             BPMNEdge incomingEdge = (BPMNEdge) getShapeOrEdge(incoming.getId(), plane);
             assert incomingEdge != null;
@@ -2586,7 +2633,7 @@ public class XMLToJava {
         }
 
         for (int k = 0; k < task.getOutgoing().size(); k++) {
-            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), process);
+            TSequenceFlow outgoing = getFlow(task.getOutgoing().get(k).getLocalPart(), flowElements);
             assert outgoing != null;
             BPMNEdge outgoingEdge = (BPMNEdge) getShapeOrEdge(outgoing.getId(), plane);
             if (outgoingEdge != null) {
@@ -2661,45 +2708,45 @@ public class XMLToJava {
         plane.getDiagramElement().add(objectFactoryEdge.createBPMNEdge(andFlow1Left));
 
         //remove all unneeded references and objects
-        List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), process);
+        references = getReferences(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), flowElements);
         for (TDataObjectReference data : references) {
-            removeFromProcess(data, process);
+            removeFromProcess(data, flowElements);
         }
-        List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), process);
+        List<TDataObjectReference> references2 = getReferences(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), flowElements);
         for (TDataObjectReference data : references2) {
-            removeFromProcess(data, process);
+            removeFromProcess(data, flowElements);
         }
         if (inputTasksCatch.size() > 1 || isAlreadyAWhiteBox(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()),collaboration)) {
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), "Sensor (IoT)", process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), "Sensor (IoT)", flowElements, collaboration, plane);
             //replace businessRuleTask to catch event
-            changeTaskToIntermediateMessageCatchEvent(businessRuleTaskCatch, process, collaboration, plane);
+            changeTaskToIntermediateMessageCatchEvent(businessRuleTaskCatch, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(task.getDataInputAssociation().get(0), process);
+            removeFromProcess(task.getDataInputAssociation().get(0), flowElements);
 
         }
         if (outputTasks.size() > 1 || isAlreadyAWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()),collaboration)) {
             //create WhiteBox
-            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), "Actuator (IoT)", process, collaboration, plane);
+            replaceDataAssociationWithWhiteBox(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), "Actuator (IoT)", flowElements, collaboration, plane);
             //replace serviceTask to throw event
-            changeTaskToIntermediateMessageThrowEvent(serviceTask, process, collaboration, plane);
+            changeTaskToIntermediateMessageThrowEvent(serviceTask, flowElements, collaboration, plane);
 
             //remove original reference
-            removeFromProcess(task.getDataOutputAssociation().get(0), process);
+            removeFromProcess(task.getDataOutputAssociation().get(0), flowElements);
 
         }
         return new Pair<>(businessRuleTaskCatch,serviceTask);
     }
 
-    private Pair<boolean[], String> replaceSeveralInputAssociation(TTask task, TDataObjectReference reference, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
+    private Pair<boolean[], String> replaceSeveralInputAssociation(TTask task, TDataObjectReference reference, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
         //check if the data input has only one association
         boolean[] isSingle = new boolean[task.getDataInputAssociation().size()];
         StringBuilder singleSensors = new StringBuilder("(IoT) Sensors: ");
         for (int k = 0; k < task.getDataInputAssociation().size(); k++) {
-            List<TDataObjectReference> references3 = getReferences(getIDOfObject(task.getDataInputAssociation().get(k).getSourceRef().get(0).getValue()), process);
+            List<TDataObjectReference> references3 = getReferences(getIDOfObject(task.getDataInputAssociation().get(k).getSourceRef().get(0).getValue()), flowElements);
             for (TDataObjectReference referenceItem : references3) {
-                List<TTask> referenceTasks = getAssociatedTasks(referenceItem.getId(), false, process);
+                List<TTask> referenceTasks = getAssociatedTasks(referenceItem.getId(), false, flowElements);
                 if (referenceTasks.size() <= 1) {
                     isSingle[k] = true;
                     singleSensors.append(referenceItem.getName()).append(" & ");
@@ -2717,7 +2764,7 @@ public class XMLToJava {
                                     collaboration.getMessageFlow().add(messageFlow);
                                     flowCreated = true;
                                 }
-                                removeFromProcess(referenceItem, process);
+                                removeFromProcess(referenceItem, flowElements);
                                 break;
                             }
                         }
@@ -2737,27 +2784,27 @@ public class XMLToJava {
                                 //Add to list
                                 collaboration.getMessageFlow().add(messageFlow);
 
-                                removeFromProcess(referenceItem, process);
-                                changeTaskToIntermediateMessageCatchEvent(taskItem, process, collaboration, plane);
+                                removeFromProcess(referenceItem, flowElements);
+                                changeTaskToIntermediateMessageCatchEvent(taskItem, flowElements, collaboration, plane);
                                 break;
                             }
                         }
                     }
-                    replaceDataAssociationWithWhiteBox(referenceItem.getId(), "(IoT) Sensor: " + name, process, collaboration, plane);
+                    replaceDataAssociationWithWhiteBox(referenceItem.getId(), "(IoT) Sensor: " + name, flowElements, collaboration, plane);
                 }
             }
         }
         return new Pair<>(isSingle, singleSensors.toString());
     }
 
-    private Pair<boolean[], String> replaceSeveralOutputAssociation(TTask task, TDataObjectReference reference, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
+    private Pair<boolean[], String> replaceSeveralOutputAssociation(TTask task, TDataObjectReference reference, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
         //check if the data input has only one association
         boolean[] isSingle = new boolean[task.getDataOutputAssociation().size()];
         StringBuilder singleActuators = new StringBuilder("(IoT) Actuators: ");
         for (int k = 0; k < task.getDataOutputAssociation().size(); k++) {
-            List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataOutputAssociation().get(k).getTargetRef()), process);
+            List<TDataObjectReference> references = getReferences(getIDOfObject(task.getDataOutputAssociation().get(k).getTargetRef()), flowElements);
             for (TDataObjectReference referenceItem : references) {
-                List<TTask> referenceTasks = getAssociatedTasks(referenceItem.getId(), true, process);
+                List<TTask> referenceTasks = getAssociatedTasks(referenceItem.getId(), true, flowElements);
                 if (referenceTasks.size() <= 1) {
                     isSingle[k] = true;
                     singleActuators.append(referenceItem.getName()).append(" & ");
@@ -2775,7 +2822,7 @@ public class XMLToJava {
                                     collaboration.getMessageFlow().add(messageFlow);
                                     flowCreated = true;
                                 }
-                                removeFromProcess(referenceItem, process);
+                                removeFromProcess(referenceItem, flowElements);
                                 break;
                             }
                         }
@@ -2795,13 +2842,13 @@ public class XMLToJava {
                                 //Add to list
                                 collaboration.getMessageFlow().add(messageFlow);
 
-                                removeFromProcess(referenceItem, process);
-                                changeTaskToIntermediateMessageThrowEvent(taskItem, process, collaboration, plane);
+                                removeFromProcess(referenceItem, flowElements);
+                                changeTaskToIntermediateMessageThrowEvent(taskItem, flowElements, collaboration, plane);
                                 break;
                             }
                         }
                     }
-                    replaceDataAssociationWithWhiteBox(referenceItem.getId(), "(IoT) Sensor: " + name, process, collaboration, plane);
+                    replaceDataAssociationWithWhiteBox(referenceItem.getId(), "(IoT) Sensor: " + name, flowElements, collaboration, plane);
                 }
             }
         }
@@ -2811,7 +2858,7 @@ public class XMLToJava {
     /**
      * Changes a DataInputAssociation sequence flow into a message flow
      */
-    private void changeSequenceFlowToMessageFlow(TTask task, TDataInputAssociation flow, TCollaboration collaboration) {
+    private void changeSequenceFlowToMessageFlow(TTask task, TDataInputAssociation flow, TCollaboration collaboration, BPMNPlane plane) {
         //Create MessageFlow
         TMessageFlow messageFlow = new TMessageFlow();
         messageFlow.setId(flow.getId());
@@ -2819,12 +2866,21 @@ public class XMLToJava {
         messageFlow.setTargetRef(QName.valueOf(task.getId()));
         //Add to list
         collaboration.getMessageFlow().add(messageFlow);
+
+        BPMNEdge edge = (BPMNEdge) getShapeOrEdge(flow.getId(), plane);
+        if (edge != null) {
+            if (edge.getWaypoint().size() > 2){
+                for (int m = edge.getWaypoint().size() - 2; m > 0; m--) {
+                    edge.getWaypoint().remove(m);
+                }
+            }
+        }
     }
 
     /**
      * Changes a DataOutputAssociation sequence flow into a message flow
      */
-    private void changeSequenceFlowToMessageFlow(TTask task, TDataOutputAssociation flow, TCollaboration collaboration) {
+    private void changeSequenceFlowToMessageFlow(TTask task, TDataOutputAssociation flow, TCollaboration collaboration, BPMNPlane plane) {
         //Create MessageFlow
         TMessageFlow messageFlow = new TMessageFlow();
         messageFlow.setId(flow.getId());
@@ -2832,9 +2888,18 @@ public class XMLToJava {
         messageFlow.setTargetRef(QName.valueOf(getIDOfObject(flow.getTargetRef())));
         //Add to list
         collaboration.getMessageFlow().add(messageFlow);
+
+        BPMNEdge edge = (BPMNEdge) getShapeOrEdge(flow.getId(), plane);
+        if (edge != null) {
+            if (edge.getWaypoint().size() > 2){
+                for (int m = edge.getWaypoint().size() - 2; m > 0; m--) {
+                    edge.getWaypoint().remove(m);
+                }
+            }
+        }
     }
 
-    private void changeTaskToIntermediateMessageCatchEvent(TTask task, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
+    private void changeTaskToIntermediateMessageCatchEvent(TTask task, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
         //create message catch event
         TIntermediateCatchEvent catchEvent = new TIntermediateCatchEvent();
         catchEvent.setId(task.getId());
@@ -2843,20 +2908,18 @@ public class XMLToJava {
         TMessageEventDefinition messageEventDefinition = new TMessageEventDefinition();
         messageEventDefinition.setId("MessageEventDefinition_" + randomNumberSequence());
         catchEvent.getEventDefinition().add(objectFactory.createMessageEventDefinition(messageEventDefinition));
-        removeFromProcess(task, process);
+        removeFromProcess(task, flowElements);
         //add to list and reshape
-        process.getFlowElement().add(objectFactory.createIntermediateCatchEvent(catchEvent));
+        flowElements.add(objectFactory.createIntermediateCatchEvent(catchEvent));
         BPMNShape shape = (BPMNShape) getShapeOrEdge(catchEvent.getId(), plane);
         assert shape != null;
         changeShapeAttributes(catchEvent.getId(), 36, 36, (int) ((shape.getBounds().getX() + shape.getBounds().getWidth() / 2) - 18), (int) ((shape.getBounds().getY() + shape.getBounds().getHeight() / 2) - 18), false, plane);
         for (TDataOutputAssociation outputAssociation : task.getDataOutputAssociation()) {
-            changeSequenceFlowToMessageFlow(task, outputAssociation, collaboration);
+            changeSequenceFlowToMessageFlow(task, outputAssociation, collaboration, plane);
         }
         for (TDataInputAssociation inputAssociation : task.getDataInputAssociation()) {
-            changeSequenceFlowToMessageFlow(task, inputAssociation, collaboration);
+            changeSequenceFlowToMessageFlow(task, inputAssociation, collaboration, plane);
         }
-//        task.getDataInputAssociation().clear();
-//        task.getDataOutputAssociation().clear();
         for (int i = 0; i < task.getOutgoing().size(); i++) {
             BPMNEdge edge = (BPMNEdge) getShapeOrEdge(task.getOutgoing().get(i).getLocalPart(), plane);
             if (edge != null) {
@@ -2867,13 +2930,13 @@ public class XMLToJava {
         for (int i = 0; i < task.getIncoming().size(); i++) {
             BPMNEdge edge = (BPMNEdge) getShapeOrEdge(task.getIncoming().get(i).getLocalPart(), plane);
             if (edge != null) {
-                edge.getWaypoint().get(edge.getWaypoint().size()-1).setX(shape.getBounds().getX());
-                edge.getWaypoint().get(edge.getWaypoint().size()-1).setY(shape.getBounds().getY() + shape.getBounds().getHeight() / 2);
+                edge.getWaypoint().get(edge.getWaypoint().size() - 1).setX(shape.getBounds().getX());
+                edge.getWaypoint().get(edge.getWaypoint().size() - 1).setY(shape.getBounds().getY() + shape.getBounds().getHeight() / 2);
             }
         }
     }
 
-    private void changeTaskToIntermediateMessageThrowEvent(TTask task, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
+    private void changeTaskToIntermediateMessageThrowEvent(TTask task, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
         //create message catch event
         TIntermediateThrowEvent throwEvent = new TIntermediateThrowEvent();
         throwEvent.setId(task.getId());
@@ -2882,20 +2945,18 @@ public class XMLToJava {
         TMessageEventDefinition messageEventDefinition = new TMessageEventDefinition();
         messageEventDefinition.setId("MessageEventDefinition_" + randomNumberSequence());
         throwEvent.getEventDefinition().add(objectFactory.createMessageEventDefinition(messageEventDefinition));
-        removeFromProcess(task, process);
+        removeFromProcess(task, flowElements);
         //add to list and reshape
-        process.getFlowElement().add(objectFactory.createIntermediateThrowEvent(throwEvent));
+        flowElements.add(objectFactory.createIntermediateThrowEvent(throwEvent));
         BPMNShape shape = (BPMNShape) getShapeOrEdge(throwEvent.getId(), plane);
         assert shape != null;
         changeShapeAttributes(throwEvent.getId(), 36, 36, (int) ((shape.getBounds().getX() + shape.getBounds().getWidth() / 2) - 18), (int) ((shape.getBounds().getY() + shape.getBounds().getHeight() / 2) - 18), false, plane);
         for (TDataOutputAssociation outputAssociation : task.getDataOutputAssociation()) {
-            changeSequenceFlowToMessageFlow(task, outputAssociation, collaboration);
+            changeSequenceFlowToMessageFlow(task, outputAssociation, collaboration, plane);
         }
         for (TDataInputAssociation inputAssociation : task.getDataInputAssociation()) {
-            changeSequenceFlowToMessageFlow(task, inputAssociation, collaboration);
+            changeSequenceFlowToMessageFlow(task, inputAssociation, collaboration, plane);
         }
-//        task.getDataInputAssociation().clear();
-//        task.getDataOutputAssociation().clear();
         for (int i = 0; i < task.getOutgoing().size(); i++) {
             BPMNEdge edge = (BPMNEdge) getShapeOrEdge(task.getOutgoing().get(i).getLocalPart(), plane);
             if (edge != null) {
@@ -2906,8 +2967,8 @@ public class XMLToJava {
         for (int i = 0; i < task.getIncoming().size(); i++) {
             BPMNEdge edge = (BPMNEdge) getShapeOrEdge(task.getIncoming().get(i).getLocalPart(), plane);
             if (edge != null) {
-                edge.getWaypoint().get(edge.getWaypoint().size()-1).setX(shape.getBounds().getX());
-                edge.getWaypoint().get(edge.getWaypoint().size()-1).setY(shape.getBounds().getY() + shape.getBounds().getHeight() / 2);
+                edge.getWaypoint().get(edge.getWaypoint().size() - 1).setX(shape.getBounds().getX());
+                edge.getWaypoint().get(edge.getWaypoint().size() - 1).setY(shape.getBounds().getY() + shape.getBounds().getHeight() / 2);
             }
         }
     }
@@ -2918,7 +2979,7 @@ public class XMLToJava {
      * @param dataId ID of the WhiteBox.
      * @param name   Name of the WhiteBox.
      */
-    private void replaceDataAssociationWithWhiteBox(String dataId, String name, TProcess process, TCollaboration collaboration, BPMNPlane plane) {
+    private void replaceDataAssociationWithWhiteBox(String dataId, String name, List<JAXBElement<? extends TFlowElement>> flowElements, TCollaboration collaboration, BPMNPlane plane) {
         if (!isAlreadyAWhiteBox(dataId,collaboration)) {
             if (!maxSet) {
                 this.maxY = getMaxY(plane) + 150;
@@ -2930,7 +2991,7 @@ public class XMLToJava {
                 TParticipant participant = new TParticipant();
                 participant.setId("Participant_" + randomNumberSequence());
                 participant.setName("Process 1");
-                participant.setProcessRef(QName.valueOf(process.getId()));
+                participant.setProcessRef(QName.valueOf(processID));
                 collaboration.getParticipant().add(participant);
                 String id = "Collaboration_" + randomNumberSequence();
                 collaboration.setId(id);
@@ -2965,10 +3026,10 @@ public class XMLToJava {
         return false;
     }
 
-    private List<TDataObjectReference> getReferences(String id, TProcess process) {
+    private List<TDataObjectReference> getReferences(String id, List<JAXBElement<? extends TFlowElement>> flowElements) {
         List<TDataObjectReference> references = new ArrayList<>();
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
-            if (process.getFlowElement().get(i).getValue() instanceof TDataObjectReference reference) {
+        for (int i = 0; i < flowElements.size(); i++) {
+            if (flowElements.get(i).getValue() instanceof TDataObjectReference reference) {
                 if (reference.getId().equals(id)) {
                     references.add(reference);
                 }
@@ -2980,10 +3041,10 @@ public class XMLToJava {
     /**
      * Removes the given element from the process.
      */
-    private void removeFromProcess(TBaseElement element, TProcess process) {
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
-            if ((process.getFlowElement().get(i).getValue()).getId().equals(element.getId())) {
-                process.getFlowElement().remove(i);
+    private void removeFromProcess(TBaseElement element, List<JAXBElement<? extends TFlowElement>> flowElements) {
+        for (int i = 0; i < flowElements.size(); i++) {
+            if ((flowElements.get(i).getValue()).getId().equals(element.getId())) {
+                flowElements.remove(i);
             }
         }
     }
@@ -3018,10 +3079,10 @@ public class XMLToJava {
      * @param id The id of the dataObjectReference aka. DataInput/OutputAssociation
      * @return The task.
      */
-    private List<TTask> getAssociatedTasks(String id, boolean isForActuator , TProcess process) {
+    private List<TTask> getAssociatedTasks(String id, boolean isForActuator , List<JAXBElement<? extends TFlowElement>> flowElements) {
         List<TTask> tasks = new ArrayList<>();
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
-            if (process.getFlowElement().get(i).getValue() instanceof TTask task) {
+        for (int i = 0; i < flowElements.size(); i++) {
+            if (flowElements.get(i).getValue() instanceof TTask task) {
                 if (!isForActuator) {
                     if (task.getDataInputAssociation().size() > 0) {
                         for (TDataInputAssociation input : task.getDataInputAssociation()) {
@@ -3046,12 +3107,12 @@ public class XMLToJava {
         return tasks;
     }
 
-    private TSequenceFlow getFlow(String id, TProcess process) {
+    private TSequenceFlow getFlow(String id, List<JAXBElement<? extends TFlowElement>> flowElements) {
         //go through all elements in the process
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
+        for (int i = 0; i < flowElements.size(); i++) {
             //check if the element is a sequence flow
-            if (process.getFlowElement().get(i).getValue() instanceof TBaseElement) {
-                TBaseElement baseElement = process.getFlowElement().get(i).getValue();
+            if (flowElements.get(i).getValue() instanceof TBaseElement) {
+                TBaseElement baseElement = flowElements.get(i).getValue();
                 //check if the source of the flow is the current element
                 if (baseElement.getId().equals(id)) {
                     //add the target of the flow to the list
@@ -3065,36 +3126,33 @@ public class XMLToJava {
     /**
      * Returns the BaseElement with the attached id.
      */
-    private TBaseElement getBaseElement(String id, TProcess process) {
+    private TBaseElement getBaseElement(String id, List<JAXBElement<? extends TFlowElement>> flowElements) {
+        System.out.println("here -----------------------");
         //go through all elements in the process
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
+        for (int i = 0; i < flowElements.size(); i++) {
             //check if the element is a sequence flow
-            if (process.getFlowElement().get(i).getValue() instanceof TBaseElement) {
-                TBaseElement baseElement = process.getFlowElement().get(i).getValue();
+            if (flowElements.get(i).getValue() instanceof TBaseElement) {
+                TBaseElement baseElement = flowElements.get(i).getValue();
                 //check if the source of the flow is the current element
                 if (baseElement.getId().equals(id)) {
                     //add the target of the flow to the list
+                    System.out.println(baseElement.getId());
                     return baseElement;
                 }
             }
         }
+        System.out.println("end -----------------------");
         return null;
     }
 
     /**
      * Replaces the old id with the new id in every mention.
-     *
-     * @param oldID     The old id.
-     * @param newObject The new object that hold the new id.
-     * @param id        The id which needs to be inserted.
-     * @param process   The {@link  TProcess} which holds all bpmn elements.
-     * @param plane     The {@link BPMNPlane} which holds all diagram elements.
      */
-    private void replaceAllIDsMentions(String oldID, Object newObject, String id, TProcess process, BPMNPlane plane) {
+    private void replaceAllIDsMentions(String oldID, Object newObject, String id, List<JAXBElement<? extends TFlowElement>> flowElements, BPMNPlane plane) {
         //go through all elements in the process
-        for (int i = 0; i < process.getFlowElement().size(); i++) {
+        for (int i = 0; i < flowElements.size(); i++) {
             //check if the element is a sequence flow
-            if (process.getFlowElement().get(i).getValue() instanceof TSequenceFlow sequenceFlow) {
+            if (flowElements.get(i).getValue() instanceof TSequenceFlow sequenceFlow) {
                 //check if the source or target ahs the old id, if so replace it
                 if (Objects.equals(getIDOfObject(sequenceFlow.getSourceRef()), oldID)) {
                     sequenceFlow.setSourceRef(newObject);
@@ -3104,7 +3162,7 @@ public class XMLToJava {
                 }
             }
             //do the same for other nodes with outgoing and incoming types
-            else if (process.getFlowElement().get(i).getValue() instanceof TFlowNode flowNode) {
+            else if (flowElements.get(i).getValue() instanceof TFlowNode flowNode) {
                 for (QName incoming : flowNode.getIncoming()) {
                     if (incoming.getLocalPart().equals(oldID)) {
                         flowNode.getIncoming().remove(incoming);
