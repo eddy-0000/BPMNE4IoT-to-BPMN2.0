@@ -1,26 +1,18 @@
 import javafx.application.Application;
 import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.scene.paint.Paint;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
-import org.xml.sax.SAXException;
 
-import javax.xml.parsers.ParserConfigurationException;
 import java.io.File;
-import java.io.IOException;
 
 
 public class Display extends Application {
-    private XMLExtractor extractor = new XMLExtractor();
     private XMLToJava xmlToJava = new XMLToJava();
 
     @Override
@@ -28,15 +20,15 @@ public class Display extends Application {
         Label informationLabel = new Label();
         // create two buttons
         Button importButton = new Button("Import XML");
+        Button exportButton = new Button("Export XML");
 
-
+        // Configure the FileChooser
+        FileChooser fileChooser = new FileChooser();
+        // set the initial directory
+        String home = System.getProperty("user.home");
+        fileChooser.setInitialDirectory(new File(home+"/Documents"));
 
         importButton.setOnAction(event -> {
-            // create a file chooser dialog
-            FileChooser fileChooser = new FileChooser();
-            // set the initial directory
-            String home = System.getProperty("user.home");
-            fileChooser.setInitialDirectory(new File(home+"/Downloads"));
             // show the dialog and wait for the user to select a file
             File selectedFile = fileChooser.showOpenDialog(primaryStage);
             // if the user selected a file, print its path to the console
@@ -60,7 +52,21 @@ public class Display extends Application {
             }
         });
 
-        Button exportButton = new Button("Export XML");
+        exportButton.setOnAction(event -> {
+            // Show the file dialog and get the selected file
+            File selectedFile = fileChooser.showSaveDialog(primaryStage);
+            if (selectedFile != null) {
+                try {
+                    xmlToJava.exportXML(selectedFile);
+                    informationLabel.setTextFill(Color.GREEN);
+                    informationLabel.setText("The file has been exported.");
+                } catch (Exception e){
+                    informationLabel.setTextFill(Color.RED);
+                    informationLabel.setText(e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        });
 
         // create a layout container to hold the buttons
         VBox root = new VBox(20);

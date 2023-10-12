@@ -18,6 +18,10 @@ import org.xml.sax.SAXException;
 import javax.xml.bind.*;
 import javax.xml.namespace.QName;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 public class XMLToJava {
@@ -32,20 +36,24 @@ public class XMLToJava {
     private List<TTask> toDelete = new ArrayList<>();
     private List<TTask> toRemove = new ArrayList<>();
     private String processID = "";
+    private File file;
+    private TDefinitions root;
+    private Marshaller marshaller;
 
     public void convertXML(File xmlFile) throws Exception {
         toRemove.clear();
+        file = xmlFile;
         try {
             // create a JAXB context instance for the BPMN model package
             JAXBContext jaxbProcessContext = JAXBContext.newInstance("org.omg.spec.bpmn._20100524.model");
 
             // create an unmarshall to convert XML to Java objects
             Unmarshaller unmarshaller = jaxbProcessContext.createUnmarshaller();
-            Marshaller marshaller = jaxbProcessContext.createMarshaller();
+            marshaller = jaxbProcessContext.createMarshaller();
             marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true);
 
             // unmarshal the XML file into a Java object of the Definitions class
-            TDefinitions root = (TDefinitions) JAXBIntrospector.getValue(unmarshaller.unmarshal(xmlFile));
+            root = (TDefinitions) JAXBIntrospector.getValue(unmarshaller.unmarshal(xmlFile));
 
             TProcess process = new TProcess();
             TCollaboration collaboration = new TCollaboration();
@@ -125,7 +133,6 @@ public class XMLToJava {
             for (int i = 0; i < process.getFlowElement().size(); i++) {
                 if (process.getFlowElement().get(i).getValue() instanceof TBoundaryEvent) {
                     separateBoundary((TBoundaryEvent) process.getFlowElement().get(i).getValue(), process.getFlowElement(), plane);
-                    System.out.println("Boundary End");
                 }
             }
 
@@ -135,13 +142,19 @@ public class XMLToJava {
 
 
             formatDiagram(process.getFlowElement(),collaboration,plane);
-            // Marshal the JAXBElement to an XML file
-            String exportedFile = xmlFile.getAbsolutePath().substring(0, xmlFile.getAbsolutePath().length() - 5);
-            exportedFile += "_copy.bpmn";
-            marshaller.marshal(root, new File(exportedFile));
+
         } catch (JAXBException | SAXException e) {
             e.printStackTrace();
         }
+    }
+
+    public void exportXML(File exportFile) throws JAXBException {
+        // Marshal the JAXBElement to an XML file
+        String fileName = exportFile.getAbsolutePath();
+        if (!fileName.endsWith(".bpmn"))
+            fileName = fileName+".bpmn";
+
+        marshaller.marshal(root, new File(fileName));
     }
 
     private String checkIfModelIsValid(List<JAXBElement<? extends TFlowElement>> flowElements) throws Exception {
@@ -225,7 +238,6 @@ public class XMLToJava {
              if (task.getDataInputAssociation().size() > 2) {
                 throw new Exception("Some tasks have too many sensor associations and are not supported by this prototype currently!");
             } else if (task.getDataOutputAssociation().size() > 1) {
-                System.out.println("here");
                 throw new Exception("Some tasks have too many actuator associations and are not supported by this prototype currently!");
             } else if (task.getDataInputAssociation().size() == 2){
                 boolean sensorPresent = false;
@@ -242,7 +254,6 @@ public class XMLToJava {
                 } else if (((TDataObjectReference)task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()).getOtherAttributes().get(keyItem).equals("sensor") || ((TDataObjectReference)task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()).getOtherAttributes().get(keyItem).equals("sensor-sub")) {
                     sensorPresent = true;
                 }
-                System.out.println(sensorPresent + " 888 " + artefactPresent);
                 if (!sensorPresent && !artefactPresent){
                     throw new Exception("Some tasks are associated with more than one sensor or sensor artefact which is not supported by this prototype currently!");
                 }
@@ -569,7 +580,6 @@ public class XMLToJava {
     }
 
     private void separateBoundary(TBoundaryEvent boundary, List<JAXBElement<? extends TFlowElement>> flowElements, BPMNPlane plane){
-        System.out.println("Bopundary " + boundary.getAttachedToRef().getLocalPart());
         TTask baseTask = (TTask) getBaseElement(boundary.getAttachedToRef().getLocalPart(),flowElements);
         baseTask.getProperty().clear();
         BPMNShape baseShape = (BPMNShape) getShapeOrEdge(baseTask.getId(), plane);
@@ -600,8 +610,6 @@ public class XMLToJava {
         String taskOutgoingFlow = "Flow_"+randomNumberSequence();
         String boundaryID = "Flow_"+randomNumberSequence();
 
-        System.out.println(leftParallelGate + " --- " + rightParallelGate + " --- " + xorGateWayId);
-
         //set attributes
         leftParallel1Flow.setId(taskIncomingFlow);
         leftParallel2Flow.setId(leftParallel2TaskFlow);
@@ -615,8 +623,6 @@ public class XMLToJava {
         boundaryInter.setId(boundary.getId());
         boundaryInter.setName("Retrieve data");
         boundaryInter.getEventDefinition().addAll(boundary.getEventDefinition());
-
-        System.out.println(xorGateWay.getId() + " hahahahah ");
 
         TSequenceFlow originalOutgoingFlow = (TSequenceFlow) getBaseElement(baseTask.getOutgoing().get(0).getLocalPart(),flowElements);
         TSequenceFlow originalIncomingFlow = (TSequenceFlow) getBaseElement(baseTask.getIncoming().get(0).getLocalPart(),flowElements);
@@ -961,10 +967,8 @@ public class XMLToJava {
                 break;
             }
             if (task.getDataOutputAssociation().size() == 0 && task.getDataInputAssociation().size() == 1) {
-                System.out.println("Nur 1 Input");
                 List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
                 if (inputTasks.size() == 1 && !convertRestToIntermediate) {
-                    System.out.println("+1 " + task.getId());
                     boolean artefactCatchPresent = false;
                     Object keyItem = ((TDataObjectReference)task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()).getOtherAttributes().keySet().toArray()[0];
                     if (((TDataObjectReference)task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()).getOtherAttributes().get(keyItem).equals("artefact-catch")) {
@@ -972,7 +976,6 @@ public class XMLToJava {
                     }
                     if (!artefactCatchPresent) {
                         if (!isAlreadyAWhiteBox(reference.getId(),collaboration)) {
-                            System.out.println("test");
                             TBusinessRuleTask businessRuleTask = new TBusinessRuleTask();
                             businessRuleTask.setId(task.getId());
                             businessRuleTask.setName(task.getName());
@@ -993,7 +996,6 @@ public class XMLToJava {
                         replaceArtefactTask(reference, task,flowElements,plane);
                     }
                 }  else if (inputTasks.size() == 1 && convertRestToIntermediate){
-                    System.out.println("+2 " + task.getId());
                     boolean artefactCatchPresent = false;
                     Object keyItem = reference.getOtherAttributes().keySet().toArray()[0];
                     if (reference.getOtherAttributes().get(keyItem).equals("artefact-catch")) {
@@ -1009,7 +1011,6 @@ public class XMLToJava {
                         changeTaskToIntermediateMessageCatchEvent(inputTasks.get(0),flowElements,collaboration,plane);
                     }
                 } else if (inputTasks.size() > 1){
-                    System.out.println("+3 " + task.getId());
                     //create WhiteBox
                     replaceDataAssociationWithWhiteBox(reference.getId(), "Sensor (IoT)" + reference.getName(), flowElements, collaboration, plane);
                     //TODO: somehow dataoutput is read wrong and inputtaskget(1) is not in model
@@ -1041,7 +1042,6 @@ public class XMLToJava {
                             changeTaskToIntermediateMessageCatchEvent(inputTasks.get(1), flowElements, collaboration, plane);
                         }
                     } else if (inputTasks.size() < 3) {
-                        System.out.println("+4 "  + task.getId());
                         replaceDataAssociationWithWhiteBox(reference.getId(), "Sensor (IoT)" + reference.getName(), flowElements, collaboration, plane);
                         ArrayList<TTask> temp = new ArrayList<>();
                         if (task.getId().equals(inputTasks.get(0))) {
@@ -1058,7 +1058,6 @@ public class XMLToJava {
                 }
                 removeFromProcess(reference, flowElements);
             } else if (task.getDataOutputAssociation().size() == 1 && task.getDataInputAssociation().size() == 1) {
-                System.out.println("1 Input und 1 Output");
                 List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
                 List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
 
@@ -1071,30 +1070,19 @@ public class XMLToJava {
                 }
 
                 if (!artefactCatchPresent && inputTasks.size() > 0) {
-                    System.out.println("jupppiii");
-                    serviceTask = replaceOneInputAndOneOutputAssociation(task, flowElements, collaboration, plane).getValue();
+                    replaceOneInputAndOneOutputAssociation(task, flowElements, collaboration, plane).getValue();
                 } else if (inputTasks.size() > 0){
-                    serviceTask = replaceSeveralInputArtefactAndOneActuatorAssociation(task, reference, flowElements, collaboration, plane).getValue();
+                    replaceSeveralInputArtefactAndOneActuatorAssociation(task, reference, flowElements, collaboration, plane).getValue();
                 }
-                //outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, process);
-//                if (serviceTask != null) {
-//                    outputTasks.add(serviceTask);
-//                }
-                System.out.println(outputTasks.size());
                 if (inputTasks.size() > 1) {
-                    System.out.println("-1");
                     ArrayList<TTask> temp = new ArrayList<>();
                     if (inputTasks.get(0).getId().equals(task.getId())){
                         temp.add(inputTasks.get(1));
-                        //toRemove.add(inputTasks.get(0));
                     } else {
                         temp.add(inputTasks.get(0));
-                        //toRemove.add(inputTasks.get(1));
                     }
-                    //removeFromProcess(reference,process);
                     changeIoTDependantTask(temp,reference,isSensor, true,flowElements,collaboration,plane);
                 } if (outputTasks.size() > 1){
-                    System.out.println("-2");
                     ArrayList<TTask> temp = new ArrayList<>();
                     if (outputTasks.get(0).getId().equals(task.getId())){
                         temp.add(outputTasks.get(1));
@@ -1107,7 +1095,6 @@ public class XMLToJava {
                 removeFromProcess(reference, flowElements);
 
             } else if (task.getDataOutputAssociation().size() == 0 && task.getDataInputAssociation().size() > 1) {
-                System.out.println("2 Inputs");
                 List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
                 List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, flowElements);
                 boolean artefactCatchPresent = false;
@@ -1120,11 +1107,9 @@ public class XMLToJava {
                 if (((TDataObjectReference)task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()).getOtherAttributes().get(keyItem).equals("artefact-catch")) {
                     artefactCatchPresent = true;
                 }
-                System.out.println(inputTasks.size() + " 5555 " + input2Tasks.size());
                 if (!artefactCatchPresent && inputTasks.size() > 0 && input2Tasks.size() > 0) {
                     replaceSeveralInputAssociation(task, reference, flowElements, collaboration, plane);
                 } else if (inputTasks.size() > 0 && input2Tasks.size() > 0){
-                    System.out.println("am here");
                     replaceSeveralInputArtefactAndSensorAssociation(task,reference, flowElements, collaboration, plane);
                 }
 
@@ -1174,7 +1159,6 @@ public class XMLToJava {
                 }
 
             } else if (task.getDataOutputAssociation().size() == 1 && task.getDataInputAssociation().size() > 1) {
-                System.out.println("1 Output 2 Input");
                 List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
                 List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, flowElements);
                 List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
@@ -1282,11 +1266,8 @@ public class XMLToJava {
                 removeFromProcess(task, flowElements);
 
             } else if (task.getDataOutputAssociation().size() == 1 && task.getDataInputAssociation().size() == 0) {
-                System.out.println("1 Output " + task.getId());
                 List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
-                System.out.println("outputs: " + outputTasks.size());
                 if (outputTasks.size() == 1 && !convertRestToIntermediate) {
-                    System.out.println("o1");
                     TServiceTask serviceTask = new TServiceTask();
                     serviceTask.setId(task.getId());
                     serviceTask.setName(task.getName());
@@ -1300,10 +1281,8 @@ public class XMLToJava {
                     removeFromProcess(reference, flowElements);
                     flowElements.add(taskElement);
                 } else if (outputTasks.size() == 1 && convertRestToIntermediate){
-                    System.out.println("o2");
                     changeTaskToIntermediateMessageThrowEvent(task,flowElements,collaboration,plane);
                 }  else if (outputTasks.size() > 1){
-                    System.out.println("o3");
                     //create WhiteBox
                     replaceDataAssociationWithWhiteBox(reference.getId(), "Actuator (IoT)" + reference.getName(), flowElements, collaboration, plane);
                     if (outputTasks.get(1).getDataInputAssociation().size() == 1 && outputTasks.get(1).getDataOutputAssociation().size() == 0) {
@@ -1789,7 +1768,6 @@ public class XMLToJava {
         List<TTask> outputTasks = getAssociatedTasks(getIDOfObject(task.getDataOutputAssociation().get(0).getTargetRef()), true, flowElements);
         List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
 
-        System.out.println(outputTasks.size() + " ---- " + inputTasks.size());
         String leftGW_Id = "Gateway_" + randomNumberSequence();
         String rightGW_Id = "Gateway_" + randomNumberSequence();
         String rule_Id = "Activity_" + randomNumberSequence();
@@ -3127,7 +3105,6 @@ public class XMLToJava {
      * Returns the BaseElement with the attached id.
      */
     private TBaseElement getBaseElement(String id, List<JAXBElement<? extends TFlowElement>> flowElements) {
-        System.out.println("here -----------------------");
         //go through all elements in the process
         for (int i = 0; i < flowElements.size(); i++) {
             //check if the element is a sequence flow
@@ -3136,12 +3113,10 @@ public class XMLToJava {
                 //check if the source of the flow is the current element
                 if (baseElement.getId().equals(id)) {
                     //add the target of the flow to the list
-                    System.out.println(baseElement.getId());
                     return baseElement;
                 }
             }
         }
-        System.out.println("end -----------------------");
         return null;
     }
 
