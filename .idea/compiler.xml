@@ -7,8 +7,10 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="BPMNE4IoT-BPMN20" />
-        <module name="BPMNE4IoT-to-BPMN2.0" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="BPMNE4IoT-to-BPMN2.0" target="8" />
+    </bytecodeTargetLevel>
   </component>
 </project>
