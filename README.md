@@ -13,7 +13,7 @@ This prototype has been kept simple and does not support models that possess the
 
 ## How to run
 
-To run the prototype execute the "BPMNE4IoT-Converter.jar" file.
+To run the prototype execute the "BPMNE4IoT-Converter.jar" file (Java Version: 16).
 
 ## License
 

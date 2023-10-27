@@ -137,7 +137,7 @@ public class XMLToJava {
 
             for (int i = 0; i < process.getFlowElement().size(); i++) {
                 if (process.getFlowElement().get(i).getValue() instanceof TBoundaryEvent) {
-                   // separateBoundary((TBoundaryEvent) process.getFlowElement().get(i).getValue(), process.getFlowElement(), plane);
+                    //separateBoundary((TBoundaryEvent) process.getFlowElement().get(i).getValue(), process.getFlowElement(), plane);
                 }
             }
 
@@ -162,42 +162,18 @@ public class XMLToJava {
         marshaller.marshal(root, new File(fileName));
     }
 
+    /**
+     *
+     * @param flowElements
+     * @return
+     * @throws Exception
+     */
     private String checkIfModelIsValid(List<JAXBElement<? extends TFlowElement>> flowElements) throws Exception {
         String errorMsg = "";
         for (int i = 0; i < flowElements.size(); i++) {
             if (flowElements.get(i).getValue() instanceof TSubProcess) {
                 //checkIfModelIsValid(subProcess.getFlowElement());
                 throw new Exception("Sub-Processes are currently not supported!");
-            }
-            if (flowElements.get(i).getValue().getClass() == TStartEvent.class) {
-                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
-                    TStartEvent startEvent = (TStartEvent) flowElements.get(i).getValue();
-                    //checks if it's of iot:type="start"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("start")) {
-                       //Do nothing
-                    }
-                }
-            } else if (flowElements.get(i).getValue().getClass() == TActivity.class) {
-                //TODO: Do Nothing?
-            } else if (flowElements.get(i).getValue().getClass() == TBoundaryEvent.class) {
-                //TODO: Do Nothing?
-            } else if (flowElements.get(i).getValue().getClass() == TEndEvent.class) {
-                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
-                    TEndEvent iotEnd = (TEndEvent) flowElements.get(i).getValue();
-                    //checks if it's of iot:type="start"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("end")) {
-                        //Do nothing
-                    }
-                }
-            } else if (flowElements.get(i).getValue() instanceof TCatchEvent) {
-                for (QName key : flowElements.get(i).getValue().getOtherAttributes().keySet()) {
-                    //checks if it's of iot:type="catch"
-                    if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("catch")) {
-                        //do nothing
-                    } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("throw")) {
-                        //do nothing
-                    }
-                }
             } else if (flowElements.get(i).getValue().getClass() == TDataObjectReference.class) {
                 for (int keyItem = 0; keyItem < flowElements.get(i).getValue().getOtherAttributes().keySet().toArray().length; keyItem++) {
                     QName key = (QName) flowElements.get(i).getValue().getOtherAttributes().keySet().toArray()[keyItem];
@@ -379,23 +355,30 @@ public class XMLToJava {
                     if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("catch")) {
                         TIntermediateCatchEvent iotThrow = (TIntermediateCatchEvent) flowElements.get(i).getValue();
                         //create the service task
-                        TBusinessRuleTask businessRuleTask = new TBusinessRuleTask();
+                        TIntermediateCatchEvent intermediateCatchEvent = new TIntermediateCatchEvent();
                         //generate IDs
-                        String taskID = "Activity_"+randomNumberSequence();
-                        businessRuleTask.setId(taskID);
-                        businessRuleTask.setName(iotThrow.getName());
-                        businessRuleTask.getOutgoing().addAll(iotThrow.getOutgoing());
-                        businessRuleTask.getIncoming().addAll(iotThrow.getIncoming());
-                        JAXBElement<TBusinessRuleTask> taskElement = objectFactory.createBusinessRuleTask(businessRuleTask);
+                        String taskID = iotThrow.getId();
+                        intermediateCatchEvent.setId(taskID);
+                        intermediateCatchEvent.setName(iotThrow.getName());
+                        intermediateCatchEvent.getOutgoing().addAll(iotThrow.getOutgoing());
+                        intermediateCatchEvent.getIncoming().addAll(iotThrow.getIncoming());
+                        TConditionalEventDefinition conditionalEventDefinition = new TConditionalEventDefinition();
+                        TExpression expression = new TExpression();
+                        expression.setId("ConditionalEvent" + randomNumberSequence());
+                        conditionalEventDefinition.setCondition(expression);
+                        JAXBElement<TConditionalEventDefinition> eventDefinition = objectFactory.createConditionalEventDefinition(conditionalEventDefinition);
+                        intermediateCatchEvent.getEventDefinition().add(eventDefinition);
+
+                        JAXBElement<TIntermediateCatchEvent> taskElement = objectFactory.createIntermediateCatchEvent(intermediateCatchEvent);
                         flowElements.remove(i);
                         flowElements.add(taskElement);
                         //replace all ids
-                        replaceAllIDsMentions(iotThrow.getId(), businessRuleTask, taskID, flowElements, plane);
-                        //reposition all items
-                        BPMNShape shape = (BPMNShape) getShapeOrEdge(taskID, plane);
-                        double y = shape.getBounds().getY() + shape.getBounds().getHeight()/2 - 40;
-                        changeShapeAttributes(taskID, 100, 80, (int) shape.getBounds().getX(), y, false, plane);
-                        moveEverythingToRight(shape.getBounds().getX(),44,plane);
+//                        replaceAllIDsMentions(iotThrow.getId(), intermediateCatchEvent, taskID, flowElements, plane);
+//                        //reposition all items
+//                        BPMNShape shape = (BPMNShape) getShapeOrEdge(taskID, plane);
+//                        double y = shape.getBounds().getY() + shape.getBounds().getHeight()/2 - 40;
+//                        changeShapeAttributes(taskID, 100, 80, (int) shape.getBounds().getX(), y, false, plane);
+//                        moveEverythingToRight(shape.getBounds().getX(),44,plane);
                         i--;
                     } else if (key.equals(new QName("http://some-company/schema/bpmn/iot", "type")) && flowElements.get(i).getValue().getOtherAttributes().get(key).equals("throw")) {
                         TIntermediateCatchEvent iotThrow = (TIntermediateCatchEvent) flowElements.get(i).getValue();
@@ -602,7 +585,7 @@ public class XMLToJava {
         TIntermediateCatchEvent boundaryInter = new TIntermediateCatchEvent();
         TParallelGateway leftGateParallel = new TParallelGateway();
         TParallelGateway rightGateParallel = new TParallelGateway();
-        TExclusiveGateway xorGateWay = new TExclusiveGateway(); //TODO: something is wrong with the xor
+        TExclusiveGateway xorGateWay = new TExclusiveGateway(); //TODO: for some reason there is a RFID conflict???? Makes no sense
 
         //create IDs
         String leftParallelGate = "Gateway_"+randomNumberSequence();
@@ -632,7 +615,7 @@ public class XMLToJava {
         TSequenceFlow originalOutgoingFlow = (TSequenceFlow) getBaseElement(baseTask.getOutgoing().get(0).getLocalPart(),flowElements);
         TSequenceFlow originalIncomingFlow = (TSequenceFlow) getBaseElement(baseTask.getIncoming().get(0).getLocalPart(),flowElements);
         TSequenceFlow xorGateWayRightOut = (TSequenceFlow) getBaseElement(boundary.getOutgoing().get(0).getLocalPart(),flowElements);
-        //xorGateWayRightOut.setName(boundary.getName());
+        xorGateWayRightOut.setName(boundary.getName());
 
         leftGateParallel.getIncoming().add(QName.valueOf(originalIncomingFlow.getId()));
         leftGateParallel.getOutgoing().add(QName.valueOf(leftParallel1Flow.getId()));
@@ -1108,7 +1091,6 @@ public class XMLToJava {
                 List<TTask> inputTasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()), false, flowElements);
                 List<TTask> input2Tasks = getAssociatedTasks(getIDOfObject(task.getDataInputAssociation().get(1).getSourceRef().get(0).getValue()), false, flowElements);
                 boolean artefactCatchPresent = false;
-                //TODO
                 Object keyItem = ((TDataObjectReference)task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()).getOtherAttributes().keySet().toArray()[0];
                 if (((TDataObjectReference)task.getDataInputAssociation().get(0).getSourceRef().get(0).getValue()).getOtherAttributes().get(keyItem).equals("artefact-catch")) {
                     artefactCatchPresent = true;
